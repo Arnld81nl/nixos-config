@@ -1,0 +1,43 @@
+#!/bin/bash
+# Screenshot tool with Satty editor
+# Usage: screenshot [region|fullscreen]
+
+OUTPUT_DIR="$HOME/Pictures/Screenshots"
+mkdir -p "$OUTPUT_DIR"
+
+# Cancel any existing slurp
+pkill slurp && exit 0
+
+MODE="${1:-region}"
+TS="$(date +'%Y-%m-%d_%H-%M-%S')"
+RAW_FILE="$OUTPUT_DIR/screenshot-${TS}-raw.png"
+OUTPUT_FILE="$OUTPUT_DIR/screenshot-${TS}.png"
+
+case "$MODE" in
+  fullscreen)
+    SELECTION=$(hyprctl monitors -j | jq -r '.[] | select(.focused == true) | "\(.x),\(.y) \((.width / .scale) | floor)x\((.height / .scale) | floor)"')
+    ;;
+  region|*)
+    wayfreeze & PID=$!
+    sleep 0.1
+    SELECTION=$(slurp 2>/dev/null)
+    kill $PID 2>/dev/null
+    ;;
+esac
+
+[ -z "$SELECTION" ] && exit 0
+
+grim -g "$SELECTION" "$RAW_FILE"
+
+satty --filename "$RAW_FILE" \
+  --output-filename "$OUTPUT_FILE" \
+  --early-exit \
+  --copy-command "$HOME/.local/bin/clipboard-copy-image"
+
+# Clean up: if user saved via Satty's save button, keep that file
+# Otherwise clean up the raw file
+if [ -f "$OUTPUT_FILE" ]; then
+  rm -f "$RAW_FILE"
+elif [ -f "$RAW_FILE" ]; then
+  rm -f "$RAW_FILE"
+fi
