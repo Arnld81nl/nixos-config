@@ -537,6 +537,20 @@ in
     XDG_SESSION_TYPE = "wayland";
   };
 
+  # === Battery notification service (laptops) ===
+  # Sends desktop notifications at low battery levels and suspends at danger level
+  services.batsignal = {
+    enable = true;
+    extraArgs = [
+      "-w" "20"   # Warning at 20%
+      "-c" "10"   # Critical at 10%
+      "-d" "5"    # Danger at 5%
+      "-p"        # Include battery percentage in notifications
+      "-e"        # Notify on full battery too
+      "-D" "systemctl suspend"  # Suspend at danger level
+    ];
+  };
+
   # === Mic mute LED sync service (G1a only) ===
   # The kernel's audio-micmute LED trigger doesn't sync with WirePlumber/PipeWire.
   # This service polls the mic mute state and updates the LED accordingly.
