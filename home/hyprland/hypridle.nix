@@ -39,11 +39,12 @@ in
       on-timeout = ${lockCmd}
     }
 
-    listener {
-      timeout = 600                    # 10 minutes
-      on-timeout = hyprctl dispatch dpms off
-      on-resume = hyprctl dispatch dpms on
-    }
+    # DPMS disabled - causes crashes on resume (Intel GPU issue)
+    # listener {
+    #   timeout = 600                    # 10 minutes
+    #   on-timeout = hyprctl dispatch dpms off
+    #   on-resume = hyprctl dispatch dpms on
+    # }
     ${suspendListener}
   '';
 }

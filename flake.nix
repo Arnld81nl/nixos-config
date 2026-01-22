@@ -35,6 +35,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Hyprland (git version for bug fixes)
+    hyprland = {
+      url = "github:hyprwm/Hyprland";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Disko for declarative disk partitioning
     disko = {
       url = "github:nix-community/disko";
@@ -42,7 +48,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, noctalia, dots-hyprland, rounded-polygon-qmljs, disko, quickshell, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, dots-hyprland, rounded-polygon-qmljs, disko, quickshell, hyprland, ... }@inputs:
   let
     system = "x86_64-linux";
 
@@ -80,7 +86,7 @@
     mkNixosSystem = { hostname, username ? "arnold", extraModules ? [], useDisko ? true }:
       nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit inputs plymouth-cybex forge username; };
+        specialArgs = { inherit inputs plymouth-cybex forge username hyprland; };
         modules = []
         # Disko for declarative disk partitioning (optional)
         ++ (if useDisko then [
