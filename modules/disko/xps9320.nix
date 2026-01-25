@@ -1,4 +1,4 @@
-# Disko configuration for xps9320
+# Disko configuration for xps9320 (Dell XPS 13 9320)
 { ... }:
 
 {
