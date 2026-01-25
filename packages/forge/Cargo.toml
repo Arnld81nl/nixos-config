@@ -1,0 +1,55 @@
+[package]
+name = "forge"
+version = "1.0.0"
+edition = "2021"
+authors = ["Cybex B.V."]
+description = "NixOS Configuration Tool - TUI for install, update, and browser profile management"
+license = "MIT"
+
+[dependencies]
+# TUI framework
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+futures = "0.3"
+
+# Async runtime
+tokio = { version = "1", features = ["full", "process"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# CLI parsing
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# Utilities
+dirs = "5"
+regex = "1"
+
+# HTTP client for GitHub API
+reqwest = { version = "0.12", features = ["json"] }
+
+# Desktop notifications
+notify-rust = "4"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+
+[[bin]]
+name = "forge-notify"
+path = "src/bin/notify.rs"
