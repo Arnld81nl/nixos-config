@@ -1,0 +1,12 @@
+{
+  "cpu": {
+    "model": "12th Gen Intel(R) Core(TM) i7-1260P",
+    "vendor": "Intel"
+  },
+  "form_factor": "Laptop",
+  "gpu": {
+    "model": "Intel Alder Lake-P GT2 [Iris Xe Graphics]",
+    "vendor": "Intel"
+  },
+  "ram": "15 GB"
+}
