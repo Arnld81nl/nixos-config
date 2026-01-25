@@ -5,17 +5,14 @@
   imports = [
     ./hardware-configuration.nix
     ../../modules/boot/limine-plymouth.nix
+    ../../modules/hardware/intel.nix
   ];
 
   networking.hostName = "xps9320";
 
   # === Intel Alder Lake (12th Gen) Configuration ===
   # Intel Iris Xe Graphics - uses i915 kernel module
-  # Intel.nix module is imported via flake.nix extraModules
-
-  # Intel CPU configuration (override AMD default from common.nix)
-  hardware.cpu.amd.updateMicrocode = lib.mkForce false;
-  hardware.cpu.intel.updateMicrocode = true;
+  # Early KMS is handled by intel.nix module
 
   # Early boot kernel modules (order matters for proper initialization)
   # - GPU modules first: enables early KMS for high-res Plymouth/console

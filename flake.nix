@@ -136,6 +136,13 @@
         username = "arnold";
       };
 
+      # Dell XPS 13 9320 (Intel Alder Lake + Iris Xe)
+      # Default: Noctalia | Specialisations: illogical
+      xps9320 = mkNixosSystem {
+        hostname = "xps9320";
+        username = "arnold";
+      };
+
       # Forge Installer ISO
       # Build: nix build .#nixosConfigurations.iso.config.system.build.isoImage
       iso = nixpkgs.lib.nixosSystem {
@@ -144,12 +151,6 @@
         modules = [
           ./modules/iso
         ];
-      };
-    
-      # xps9320 - Laptop with Intel GPU
-      xps9320 = mkNixosSystem {
-        hostname = "xps9320";
-        extraModules = [ ./modules/hardware/intel.nix ];
       };
     };
 
