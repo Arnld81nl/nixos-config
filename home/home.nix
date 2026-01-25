@@ -129,7 +129,6 @@ in
 
         # Get config for this VPN
         eval "HOST=\$VPN_''${NAME_UPPER}_HOST"
-        eval "USER=\$VPN_''${NAME_UPPER}_USER"
         eval "OP_ITEM=\$VPN_''${NAME_UPPER}_OP_ITEM"
         eval "TRUSTED_CERT=\$VPN_''${NAME_UPPER}_CERT"
 
@@ -142,41 +141,41 @@ in
         IP="''${HOST%%:*}"
 
         # Check if this specific VPN is connected (by checking process)
-        PID=$(pgrep -f "openfortivpn $IP" || true)
-
-        if [ -n "$PID" ]; then
+        if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn | grep -q "$IP"; then
           echo "Disconnecting $NAME VPN..."
-          sudo pkill -f "openfortivpn $IP"
+          sudo pkill -f "openfortivpn.*$IP"
           notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
           echo "Disconnected."
+          exit 0
+        fi
+
+        echo "Connecting to $NAME VPN..."
+
+        # Get username and password from 1Password
+        USER=$(op read "op://$OP_ITEM/username" --account "$OP_ACCOUNT" 2>/dev/null)
+        PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
+        if [ -z "$PASSWORD" ] || [ -z "$USER" ]; then
+          notify-send "VPN $NAME" "Failed to get credentials from 1Password" -i dialog-error
+          echo "Error: Could not retrieve credentials from 1Password."
+          echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists with username and password fields."
+          exit 1
+        fi
+
+        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
+
+        # Connect in background, redirect output to log
+        sudo openfortivpn "$HOST" -u "$USER" -p "$PASSWORD" ''${TRUSTED_CERT:+--trusted-cert "$TRUSTED_CERT"} > /tmp/vpn-$NAME.log 2>&1 &
+
+        # Wait a moment and check if connected
+        sleep 3
+        if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn | grep -q "$IP"; then
+          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
+          echo "Connected to $NAME VPN."
         else
-          echo "Connecting to $NAME VPN..."
-
-          # Get password from 1Password
-          PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
-          if [ -z "$PASSWORD" ]; then
-            notify-send "VPN $NAME" "Failed to get password from 1Password" -i dialog-error
-            echo "Error: Could not retrieve password from 1Password."
-            echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists."
-            exit 1
-          fi
-
-          notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
-
-          # Connect in background, redirect output to log
-          sudo openfortivpn "$HOST" -u "$USER" -p "$PASSWORD" --trusted-cert "$TRUSTED_CERT" > /tmp/vpn-$NAME.log 2>&1 &
-
-          # Wait a moment and check if connected
-          sleep 3
-          if pgrep -f "openfortivpn $IP" > /dev/null; then
-            notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
-            echo "Connected to $NAME VPN."
-          else
-            notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
-            echo "Connection failed. Check /tmp/vpn-$NAME.log"
-            cat /tmp/vpn-$NAME.log
-            exit 1
-          fi
+          notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
+          echo "Connection failed. Check /tmp/vpn-$NAME.log"
+          cat /tmp/vpn-$NAME.log
+          exit 1
         fi
       '';
     };
@@ -195,22 +194,73 @@ in
         source "$CONFIG_FILE"
 
         check_vpn() {
-          local name="$1"
-          local name_upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')
-          eval "local host=\$VPN_''${name_upper}_HOST"
-          if [[ -n "$host" ]]; then
-            local ip="''${host%%:*}"
-            pgrep -f "openfortivpn $ip" > /dev/null && echo "true" || echo "false"
+          local ip="$1"
+          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$ip"; then
+            echo "true"
           else
             echo "false"
           fi
         }
 
-        dnv_connected=$(check_vpn dnv)
-        rsg_connected=$(check_vpn rsg)
-        esdal_connected=$(check_vpn esdal)
+        dnv_connected=$(check_vpn "''${VPN_DNV_HOST%%:*}")
+        rsg_connected=$(check_vpn "''${VPN_RSG_HOST%%:*}")
+        esdal_connected=$(check_vpn "''${VPN_ESDAL_HOST%%:*}")
 
         echo "{\"dnv\": $dnv_connected, \"rsg\": $rsg_connected, \"esdal\": $esdal_connected}"
+      '';
+    };
+
+    # Individual VPN status scripts for Noctalia CustomButton widgets
+    # Output JSON: {"text": "NAME ●/○", "icon": ""}
+    # Uses pgrep -x for exact process name match, then grep for IP
+    ".local/bin/vpn-status-rsg" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        CONFIG_FILE="$HOME/.config/vpn/config"
+        if [[ -f "$CONFIG_FILE" ]]; then
+          source "$CONFIG_FILE"
+          IP="''${VPN_RSG_HOST%%:*}"
+          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$IP"; then
+            echo '{"text": "RSG ●", "icon": ""}'
+            exit 0
+          fi
+        fi
+        echo '{"text": "RSG ○", "icon": ""}'
+      '';
+    };
+
+    ".local/bin/vpn-status-dnv" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        CONFIG_FILE="$HOME/.config/vpn/config"
+        if [[ -f "$CONFIG_FILE" ]]; then
+          source "$CONFIG_FILE"
+          IP="''${VPN_DNV_HOST%%:*}"
+          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$IP"; then
+            echo '{"text": "DNV ●", "icon": ""}'
+            exit 0
+          fi
+        fi
+        echo '{"text": "DNV ○", "icon": ""}'
+      '';
+    };
+
+    ".local/bin/vpn-status-esdal" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        CONFIG_FILE="$HOME/.config/vpn/config"
+        if [[ -f "$CONFIG_FILE" ]]; then
+          source "$CONFIG_FILE"
+          IP="''${VPN_ESDAL_HOST%%:*}"
+          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$IP"; then
+            echo '{"text": "Esdal ●", "icon": ""}'
+            exit 0
+          fi
+        fi
+        echo '{"text": "Esdal ○", "icon": ""}'
       '';
     };
 
@@ -218,7 +268,6 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        notify-send "VPN-DNV" "Script started!" -t 2000
         exec "$HOME/.local/bin/vpn-toggle" "DNV"
       '';
     };
@@ -246,25 +295,47 @@ in
         # Copy this to ~/.config/vpn/config and fill in your values
 
         # 1Password account for work items
-        OP_ACCOUNT="your-1password-account"
+        OP_ACCOUNT="my"
 
-        # VPN: DNV
-        VPN_DNV_HOST="1.2.3.4:443"
-        VPN_DNV_USER="your-username"
-        VPN_DNV_OP_ITEM="Vault/VPN-Item"
-        VPN_DNV_CERT="your-cert-hash"
+        # VPN: RSG (username/password from 1Password)
+        VPN_RSG_HOST="0.0.0.0:10443"
+        VPN_RSG_OP_ITEM="VPN-RSG"
+        VPN_RSG_CERT=""  # Will be shown on first connect
+
+        # VPN: DNV (username/password from 1Password)
+        VPN_DNV_HOST="212.125.229.194:443"
+        VPN_DNV_OP_ITEM="VPN-DNV"
+        VPN_DNV_CERT=""  # Will be shown on first connect
+
+        # VPN: Esdal (username/password from 1Password)
+        VPN_ESDAL_HOST="0.0.0.0:443"
+        VPN_ESDAL_OP_ITEM="VPN-Esdal"
+        VPN_ESDAL_CERT=""  # Needs separate certificates
+      '';
+    };
+
+    # Actual VPN config
+    ".config/vpn/config" = {
+      text = ''
+        # VPN Configuration
+
+        # 1Password account
+        OP_ACCOUNT="my-account"
 
         # VPN: RSG
-        VPN_RSG_HOST="5.6.7.8:10443"
-        VPN_RSG_USER="your-username"
+        VPN_RSG_HOST="0.0.0.0:10443"
         VPN_RSG_OP_ITEM="Vault/VPN-Item"
-        VPN_RSG_CERT="your-cert-hash"
+        VPN_RSG_CERT="CERT_HASH_PLACEHOLDER"
+
+        # VPN: DNV
+        VPN_DNV_HOST="0.0.0.0:443"
+        VPN_DNV_OP_ITEM="Vault/VPN-Item"
+        VPN_DNV_CERT="CERT_HASH_PLACEHOLDER"
 
         # VPN: Esdal
-        VPN_ESDAL_HOST="9.10.11.12:443"
-        VPN_ESDAL_USER="your-username"
+        VPN_ESDAL_HOST="0.0.0.0:443"
         VPN_ESDAL_OP_ITEM="Vault/VPN-Item"
-        VPN_ESDAL_CERT="your-cert-hash"
+        VPN_ESDAL_CERT=""
       '';
     };
 
