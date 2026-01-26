@@ -777,6 +777,16 @@ async fn step_install_nixos(
     // Remove .git from copied config
     let _ = runner.run("sudo", &["rm", "-rf", &format!("{}/.git", config_dir)]).await;
 
+    // Add config dir to git's safe.directory to bypass ownership check
+    // This is required because the ISO user doesn't own the mounted filesystem
+    let _ = runner.run(
+        "sudo",
+        &[
+            "nix-shell", "-p", "git", "--run",
+            &format!("git config --global --add safe.directory {}", config_dir),
+        ],
+    ).await;
+
     // Create symlink using sudo
     runner.out("  Setting up symlink...").await;
     let symlink_ok = setup_config_symlink_sudo(runner, &symlink_target).await?;
@@ -922,6 +932,7 @@ async fn setup_config_symlink_sudo(runner: &CommandRunner<'_>, symlink_target: &
 /// Initialize git repository in the config directory
 async fn init_git_repo(runner: &CommandRunner<'_>, config_dir: &str) {
     // Use sudo for git operations since the config dir is owned by root at this point
+    // Add safe.directory to bypass Git's ownership check (required for install from ISO)
     match runner
         .run(
             "sudo",
@@ -931,11 +942,12 @@ async fn init_git_repo(runner: &CommandRunner<'_>, config_dir: &str) {
                 "git",
                 "--run",
                 &format!(
-                    "cd {} && git init -b main && git remote add origin {} && git add -A && \
+                    "git config --global --add safe.directory {} && \
+                    cd {} && git init -b main && git remote add origin {} && git add -A && \
                     git -c user.name='NixOS Install' -c user.email='install@localhost' \
                     commit -m 'Initial configuration' && git fetch origin && \
                     git branch --set-upstream-to=origin/main main",
-                    config_dir, REPO_URL
+                    config_dir, config_dir, REPO_URL
                 ),
             ],
         )
