@@ -82,6 +82,18 @@
   # Touchpad support
   services.libinput.enable = true;
 
+  # Fingerprint reader support
+  services.fprintd.enable = true;
+
+  # PAM fingerprint authentication
+  security.pam.services = {
+    login.fprintAuth = true;          # Console login
+    greetd.fprintAuth = true;         # Display manager
+    sudo.fprintAuth = true;           # Sudo commands
+    polkit-1.fprintAuth = true;       # Polkit prompts (1Password, etc.)
+    hyprlock.fprintAuth = true;       # Screen lock
+  };
+
   # LUKS configuration is handled by disko (modules/disko/xps9320.nix)
   # Disko sets allowDiscards and bypassWorkqueues automatically
 
