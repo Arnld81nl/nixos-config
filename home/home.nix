@@ -5,6 +5,23 @@ let
   # Get shell from NixOS config (set by specialisations)
   shell = osConfig.desktop.shell;
 
+  # Load secrets from local file (gitignored) or use placeholders
+  secretsPath = ./secrets.nix;
+  hasSecrets = builtins.pathExists secretsPath;
+  secrets = if hasSecrets then import secretsPath else {
+    gitEmail = "your-email@example.com";
+    onePassword = {
+      account = "my";
+      ageKey = "op://Private/age-key/private-key";
+      sshKey = "op://Private/ssh-key/private key";
+    };
+    vpn = {
+      vpn1 = { host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
+      vpn2 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
+      vpn3 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
+    };
+  };
+
   # Dynamically load all wallpapers from ../wallpapers directory
   wallpapersDir = ../wallpapers;
   wallpaperFiles = builtins.readDir wallpapersDir;
@@ -43,7 +60,7 @@ in
     enable = true;
     settings.user = {
       name = "Arnld81nl";
-      email = "your-email@example.com";
+      email = secrets.gitEmail;
     };
   };
 
@@ -303,7 +320,7 @@ in
         VPN_1_CERT=""  # Will be shown on first connect
 
         # VPN 2 (username/password from 1Password)
-        VPN_2_HOST="REDACTED_IP:443"
+        VPN_2_HOST="0.0.0.0:443"
         VPN_2_OP_ITEM="Vault/VPN-Item"
         VPN_2_CERT=""  # Will be shown on first connect
 
@@ -314,28 +331,28 @@ in
       '';
     };
 
-    # Actual VPN config
+    # Actual VPN config (generated from secrets.nix)
     ".config/vpn/config" = {
       text = ''
-        # VPN Configuration
+        # VPN Configuration (auto-generated from secrets.nix)
 
         # 1Password account
-        OP_ACCOUNT="my-account"
+        OP_ACCOUNT="${secrets.onePassword.account}"
 
         # VPN 1
-        VPN_1_HOST="0.0.0.0:10443"
-        VPN_1_OP_ITEM="Vault/VPN-Item"
-        VPN_1_CERT="CERT_HASH_PLACEHOLDER"
+        VPN_1_HOST="${secrets.vpn.vpn1.host}"
+        VPN_1_OP_ITEM="${secrets.vpn.vpn1.opItem}"
+        VPN_1_CERT="${secrets.vpn.vpn1.cert}"
 
         # VPN 2
-        VPN_2_HOST="0.0.0.0:443"
-        VPN_2_OP_ITEM="Vault/VPN-Item"
-        VPN_2_CERT="CERT_HASH_PLACEHOLDER"
+        VPN_2_HOST="${secrets.vpn.vpn2.host}"
+        VPN_2_OP_ITEM="${secrets.vpn.vpn2.opItem}"
+        VPN_2_CERT="${secrets.vpn.vpn2.cert}"
 
         # VPN 3
-        VPN_VPN3_HOST="0.0.0.0:443"
-        VPN_VPN3_OP_ITEM="Vault/VPN-Item"
-        VPN_VPN3_CERT=""
+        VPN_VPN3_HOST="${secrets.vpn.vpn3.host}"
+        VPN_VPN3_OP_ITEM="${secrets.vpn.vpn3.opItem}"
+        VPN_VPN3_CERT="${secrets.vpn.vpn3.cert}"
       '';
     };
 
@@ -514,9 +531,9 @@ in
     # These are placeholder values - override in ~/.config/app-backup/config after rebuild
     repoUrl = "git@github.com:YOUR_USER/private-settings.git";
     ageRecipient = "age1your-public-key-here";
-    ageKey1Password = "op://Private/age-key/private-key";
+    ageKey1Password = secrets.onePassword.ageKey;
     ageKeyPath = "~/.config/age/key.txt";
-    sshKey1Password = "op://Private/ssh-key/private key";
+    sshKey1Password = secrets.onePassword.sshKey;
     sshKeyPath = "~/.ssh/id_ed25519";
   };
 
