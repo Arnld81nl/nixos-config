@@ -5,6 +5,23 @@ let
   # Get shell from NixOS config (set by specialisations)
   shell = osConfig.desktop.shell;
 
+  # Load secrets from local file (gitignored) or use placeholders
+  secretsPath = ./secrets.nix;
+  hasSecrets = builtins.pathExists secretsPath;
+  secrets = if hasSecrets then import secretsPath else {
+    gitEmail = "your-email@example.com";
+    onePassword = {
+      account = "my";
+      ageKey = "op://Private/age-key/private-key";
+      sshKey = "op://Private/ssh-key/private key";
+    };
+    vpn = {
+      rsg = { host = "0.0.0.0:10443"; opItem = "VPN-RSG"; cert = ""; };
+      dnv = { host = "0.0.0.0:443"; opItem = "VPN-DNV"; cert = ""; };
+      esdal = { host = "0.0.0.0:443"; opItem = "VPN-Esdal"; cert = ""; };
+    };
+  };
+
   # Dynamically load all wallpapers from ../wallpapers directory
   wallpapersDir = ../wallpapers;
   wallpaperFiles = builtins.readDir wallpapersDir;
@@ -43,7 +60,7 @@ in
     enable = true;
     settings.user = {
       name = "Arnld81nl";
-      email = "your-email@example.com";
+      email = secrets.gitEmail;
     };
   };
 
@@ -303,7 +320,7 @@ in
         VPN_RSG_CERT=""  # Will be shown on first connect
 
         # VPN: DNV (username/password from 1Password)
-        VPN_DNV_HOST="212.125.229.194:443"
+        VPN_DNV_HOST="0.0.0.0:443"
         VPN_DNV_OP_ITEM="VPN-DNV"
         VPN_DNV_CERT=""  # Will be shown on first connect
 
@@ -314,28 +331,28 @@ in
       '';
     };
 
-    # Actual VPN config
+    # Actual VPN config (generated from secrets.nix)
     ".config/vpn/config" = {
       text = ''
-        # VPN Configuration
+        # VPN Configuration (auto-generated from secrets.nix)
 
         # 1Password account
-        OP_ACCOUNT="my-account"
+        OP_ACCOUNT="${secrets.onePassword.account}"
 
         # VPN: RSG
-        VPN_RSG_HOST="0.0.0.0:10443"
-        VPN_RSG_OP_ITEM="Vault/VPN-Item"
-        VPN_RSG_CERT="CERT_HASH_PLACEHOLDER"
+        VPN_RSG_HOST="${secrets.vpn.rsg.host}"
+        VPN_RSG_OP_ITEM="${secrets.vpn.rsg.opItem}"
+        VPN_RSG_CERT="${secrets.vpn.rsg.cert}"
 
         # VPN: DNV
-        VPN_DNV_HOST="0.0.0.0:443"
-        VPN_DNV_OP_ITEM="Vault/VPN-Item"
-        VPN_DNV_CERT="CERT_HASH_PLACEHOLDER"
+        VPN_DNV_HOST="${secrets.vpn.dnv.host}"
+        VPN_DNV_OP_ITEM="${secrets.vpn.dnv.opItem}"
+        VPN_DNV_CERT="${secrets.vpn.dnv.cert}"
 
         # VPN: Esdal
-        VPN_ESDAL_HOST="0.0.0.0:443"
-        VPN_ESDAL_OP_ITEM="Vault/VPN-Item"
-        VPN_ESDAL_CERT=""
+        VPN_ESDAL_HOST="${secrets.vpn.esdal.host}"
+        VPN_ESDAL_OP_ITEM="${secrets.vpn.esdal.opItem}"
+        VPN_ESDAL_CERT="${secrets.vpn.esdal.cert}"
       '';
     };
 
@@ -514,9 +531,9 @@ in
     # These are placeholder values - override in ~/.config/app-backup/config after rebuild
     repoUrl = "git@github.com:YOUR_USER/private-settings.git";
     ageRecipient = "age1your-public-key-here";
-    ageKey1Password = "op://Private/age-key/private-key";
+    ageKey1Password = secrets.onePassword.ageKey;
     ageKeyPath = "~/.config/age/key.txt";
-    sshKey1Password = "op://Private/ssh-key/private key";
+    sshKey1Password = secrets.onePassword.sshKey;
     sshKeyPath = "~/.ssh/id_ed25519";
   };
 

@@ -1,2 +1,5 @@
 result
 packages/forge/target/
+
+# Local secrets (contains email, VPN IPs, 1Password paths)
+home/secrets.nix
