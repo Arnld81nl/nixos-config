@@ -1,4 +1,5 @@
 # xps9320 - Dell XPS 9320 (12th Gen Intel Alder Lake + Iris Xe)
+# Hardware reference: https://gist.github.com/p-alik/6ed132ffad59de8fcbc4fb10b54d745e
 { config, pkgs, lib, ... }:
 
 {
@@ -10,9 +11,16 @@
 
   networking.hostName = "xps9320";
 
-  # === Intel Alder Lake (12th Gen) Configuration ===
-  # Intel Iris Xe Graphics - uses i915 kernel module
-  # Early KMS is handled by intel.nix module
+  # === Intel Alder Lake (12th Gen) GPU - Critical Fix ===
+  # IMPORTANT: Disable PSR (Panel Self-Refresh) to prevent graphics hangs
+  # The Iris Xe on XPS 9320 has PSR bugs causing "Selective fetch area calculation failed"
+  # This OVERRIDES the intel.nix defaults
+  boot.kernelParams = lib.mkForce [
+    "i915.modeset=1"        # Enable kernel modesetting
+    "i915.enable_psr=0"     # DISABLE PSR - causes hangs on XPS 9320!
+    "i915.enable_fbc=1"     # Frame Buffer Compression (safe)
+    "resume_offset=533760"  # Btrfs swapfile offset for hibernation
+  ];
 
   # Early boot kernel modules (order matters for proper initialization)
   # - GPU modules first: enables early KMS for high-res Plymouth/console
@@ -79,7 +87,6 @@
 
   # Hibernate support (swapfile on btrfs)
   boot.resumeDevice = "/dev/mapper/cryptroot";
-  boot.kernelParams = [ "resume_offset=533760" ];
 
   # Disable zram - using swapfile for hibernate support
   zramSwap.enable = lib.mkForce false;
