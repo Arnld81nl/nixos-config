@@ -214,6 +214,31 @@ windowrule = match:class 1[pP]assword, no_screen_share on
 
 **Documentation:** https://wiki.hypr.land/Configuring/Window-Rules/
 
+## Intel i915 Panel Self Refresh (PSR) Crashes
+
+**Problem:** Random system crashes/freezes on Intel graphics (Tiger Lake, 11th Gen and newer).
+
+**Symptom:** System freezes randomly during normal use. More likely to occur when connected to external displays (e.g., Dell docks).
+
+**Root cause:** Intel Panel Self Refresh (PSR) is a power-saving feature that can cause display corruption and system instability on some hardware combinations.
+
+**Solution:** Disable PSR via kernel parameter in the host config:
+```nix
+boot.kernelParams = [
+  "i915.enable_psr=0"  # Disable Panel Self Refresh
+];
+```
+
+**Implementation:** `hosts/x1yoga/default.nix`
+
+**Affected hosts:** x1yoga (ThinkPad X1 Yoga Gen 6, Intel Iris Xe)
+
+**Tested:** January 2026 - crashes stopped after applying this fix.
+
+**Alternative options if issues persist:**
+- `i915.enable_psr=1 i915.enable_psr2_sel_fetch=0` - Disable only PSR2
+- `i915.enable_dc=0` - Disable display power savings entirely (higher power use)
+
 ## Plymouth Resolution on Limine
 
 **Problem:** Plymouth displays at low resolution (~1080p) regardless of native display.
