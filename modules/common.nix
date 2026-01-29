@@ -76,11 +76,17 @@
     wifi.powersave = false;  # Disable WiFi power save to prevent random disconnects
   };
 
+  # Tailscale VPN
+  services.tailscale.enable = true;
+
   # Firewall
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 53317 ]; # LocalSend
     allowedUDPPorts = [ 53317 ]; # LocalSend
+    # Allow Tailscale traffic
+    trustedInterfaces = [ "tailscale0" ];
+    checkReversePath = "loose";  # Required for Tailscale exit nodes
   };
 
   # Disable NetworkManager-wait-online to speed up boot
