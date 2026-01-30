@@ -25,10 +25,12 @@
   };
 
   # Intel-specific kernel parameters for better performance
+  # NOTE: PSR (Panel Self Refresh) is NOT enabled here - it causes crashes on
+  # some Tiger Lake laptops. Enable per-host if your hardware supports it.
+  # See CLAUDE.md "Intel i915 Panel Self Refresh (PSR) Crashes" for details.
   boot.kernelParams = [
-    "i915.modeset=1"            # Enable kernel modesetting
-    "i915.enable_psr=1"         # Panel Self Refresh (power saving on laptops)
-    "i915.enable_fbc=1"         # Frame Buffer Compression
+    # "i915.modeset=1"          # Deprecated in modern kernels, no longer needed
+    "i915.enable_fbc=1"         # Frame Buffer Compression (power saving)
   ];
 
   # Environment variables for Intel Wayland
