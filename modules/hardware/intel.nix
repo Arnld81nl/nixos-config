@@ -15,12 +15,11 @@
   hardware.graphics = {
     extraPackages = with pkgs; [
       intel-media-driver    # iHD driver for Broadwell+ (VA-API)
-      intel-vaapi-driver    # i965 driver for older Intel GPUs (VA-API)
-      intel-compute-runtime # OpenCL support
+      vpl-gpu-rt            # oneVPL (QSV) runtime for Tiger Lake+ hardware encoding
+      intel-compute-runtime # OpenCL support (NEO driver + Level Zero)
     ];
     extraPackages32 = with pkgs.pkgsi686Linux; [
       intel-media-driver
-      intel-vaapi-driver
     ];
   };
 
@@ -29,7 +28,6 @@
   # some Tiger Lake laptops. Enable per-host if your hardware supports it.
   # See CLAUDE.md "Intel i915 Panel Self Refresh (PSR) Crashes" for details.
   boot.kernelParams = [
-    # "i915.modeset=1"          # Deprecated in modern kernels, no longer needed
     "i915.enable_fbc=1"         # Frame Buffer Compression (power saving)
   ];
 
