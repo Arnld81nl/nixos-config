@@ -150,6 +150,7 @@ in
         eval "HOST=\$VPN_''${NAME_UPPER}_HOST"
         eval "OP_ITEM=\$VPN_''${NAME_UPPER}_OP_ITEM"
         eval "TRUSTED_CERT=\$VPN_''${NAME_UPPER}_CERT"
+        eval "VPN_TYPE=\$VPN_''${NAME_UPPER}_TYPE"
 
         if [[ -z "$HOST" ]]; then
           echo "Error: VPN '$NAME' not configured in $CONFIG_FILE"
@@ -159,6 +160,61 @@ in
         # Extract just IP for pgrep (HOST is ip:port, process shows "ip port")
         IP="''${HOST%%:*}"
 
+        # Handle OpenVPN-based VPNs (like VPN3/SSL VPN vendor)
+        if [[ "$VPN_TYPE" == "openvpn" ]]; then
+          # Check if this specific OpenVPN is connected
+          if pgrep -x openvpn > /dev/null 2>&1 && pgrep -fa openvpn | grep -q "$IP"; then
+            echo "Disconnecting $NAME VPN..."
+            sudo pkill -f "openvpn.*$IP"
+            notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
+            echo "Disconnected."
+            exit 0
+          fi
+
+          echo "Connecting to $NAME VPN (OpenVPN)..."
+
+          # Get username and password from 1Password
+          USER=$(op read "op://$OP_ITEM/username" --account "$OP_ACCOUNT" 2>/dev/null)
+          PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
+          if [ -z "$PASSWORD" ] || [ -z "$USER" ]; then
+            notify-send "VPN $NAME" "Failed to get credentials from 1Password" -i dialog-error
+            echo "Error: Could not retrieve credentials from 1Password."
+            echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists with username and password fields."
+            exit 1
+          fi
+
+          notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
+
+          # Create temp file with credentials for auth-user-pass
+          CREDS_FILE=$(mktemp)
+          echo "$USER" > "$CREDS_FILE"
+          echo "$PASSWORD" >> "$CREDS_FILE"
+          chmod 600 "$CREDS_FILE"
+
+          # Expand $HOME in the ovpn file paths
+          OVPN_CONFIG="$HOME/.config/vpn/vpn3/vpn3.ovpn"
+
+          # Connect using OpenVPN with credentials file
+          sudo openvpn --config "$OVPN_CONFIG" --auth-user-pass "$CREDS_FILE" --daemon --log /tmp/vpn-$NAME.log
+
+          # Clean up credentials file after a brief delay (give openvpn time to read it)
+          (sleep 2 && rm -f "$CREDS_FILE") &
+
+          # Wait a moment and check if connected
+          sleep 5
+          if pgrep -x openvpn > /dev/null 2>&1 && pgrep -fa openvpn | grep -q "$IP"; then
+            notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
+            echo "Connected to $NAME VPN."
+          else
+            notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
+            echo "Connection failed. Check /tmp/vpn-$NAME.log"
+            cat /tmp/vpn-$NAME.log
+            exit 1
+          fi
+          exit 0
+        fi
+
+        # Handle Fortinet VPNs (default)
         # Check if this specific VPN is connected (by checking process)
         if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn | grep -q "$IP"; then
           echo "Disconnecting $NAME VPN..."
@@ -490,10 +546,42 @@ in
         VPN_2_OP_ITEM="${secrets.vpn.vpn2.opItem}"
         VPN_2_CERT="${secrets.vpn.vpn2.cert}"
 
-        # VPN 3
+        # VPN 3 (OpenVPN with client certificates)
         VPN_VPN3_HOST="${secrets.vpn.vpn3.host}"
         VPN_VPN3_OP_ITEM="${secrets.vpn.vpn3.opItem}"
         VPN_VPN3_CERT="${secrets.vpn.vpn3.cert}"
+        VPN_VPN3_TYPE="openvpn"
+      '';
+    };
+
+    # VPN3 VPN certificates (OpenVPN)
+    ".config/vpn/vpn3/ca.crt" = {
+      text = secrets.vpn.vpn3.caCert or "";
+    };
+    ".config/vpn/vpn3/client.crt" = {
+      text = secrets.vpn.vpn3.clientCert or "";
+    };
+    ".config/vpn/vpn3/client.key" = {
+      text = secrets.vpn.vpn3.clientKey or "";
+    };
+    ".config/vpn/vpn3/vpn3.ovpn" = {
+      text = ''
+        client
+        dev tun
+        proto tcp
+        remote 0.0.0.0 443
+        resolv-retry infinite
+        nobind
+        persist-key
+        persist-tun
+        ca /home/${username}/.config/vpn/vpn3/ca.crt
+        cert /home/${username}/.config/vpn/vpn3/client.crt
+        key /home/${username}/.config/vpn/vpn3/client.key
+        cipher AES-256-GCM
+        auth SHA256
+        verb 3
+        auth-user-pass
+        auth-nocache
       '';
     };
 

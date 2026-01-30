@@ -305,8 +305,9 @@ async fn run_update(tx: &mpsc::Sender<CommandMessage>, cancel: CancellationToken
 
         let config_name = hostname.clone();
         let flake_ref = format!("{}#{}", flake_path, config_name);
+        // Use --impure to allow access to gitignored secrets.nix
         let result =
-            run_command_cancellable(tx, "sudo", &["nixos-rebuild", "switch", "--flake", &flake_ref], cancel.clone()).await?;
+            run_command_cancellable(tx, "sudo", &["nixos-rebuild", "switch", "--flake", &flake_ref, "--impure"], cancel.clone()).await?;
 
         out(tx, "").await;
         match result {

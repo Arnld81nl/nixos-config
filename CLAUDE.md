@@ -109,11 +109,14 @@ The ISO automatically:
 
 ```bash
 # Rebuild (includes all shell specialisations)
-sudo nixos-rebuild switch --flake .#x1yoga
+# IMPORTANT: Use --impure to allow access to gitignored secrets.nix
+sudo nixos-rebuild switch --flake .#x1yoga --impure
 
 # Or use hostname (auto-detected)
-sudo nixos-rebuild switch --flake .
+sudo nixos-rebuild switch --flake . --impure
 ```
+
+**Note:** The `--impure` flag is required because `secrets.nix` is gitignored and flakes run in pure evaluation mode by default. Without `--impure`, the build will use placeholder values for VPN configs and other secrets.
 
 ### Rebuilding with Active Specialisation
 
@@ -125,7 +128,7 @@ sudo nixos-rebuild switch --flake .
 cat /run/user/$(id -u)/desktop-shell 2>/dev/null || echo "default"
 
 # Standard rebuild (activates default configuration)
-sudo nixos-rebuild switch --flake .
+sudo nixos-rebuild switch --flake . --impure
 
 # If you were in a specialisation, re-activate it:
 sudo /run/current-system/specialisation/illogical/bin/switch-to-configuration switch
@@ -135,7 +138,7 @@ sudo /run/current-system/specialisation/illogical/bin/switch-to-configuration sw
 1. Check the active shell: `cat /run/user/$(id -u)/desktop-shell 2>/dev/null`
 2. If it returns "illogical" (or another specialisation name), re-activate after rebuild:
    ```bash
-   sudo nixos-rebuild switch --flake . && \
+   sudo nixos-rebuild switch --flake . --impure && \
    sudo /run/current-system/specialisation/illogical/bin/switch-to-configuration switch
    ```
 

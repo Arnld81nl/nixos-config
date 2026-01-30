@@ -20,12 +20,13 @@ let
     monitor = ,preferred,auto,2
     env = GDK_SCALE,2
   '' else if isXps9320 then ''
-    # XPS 9320: Built-in display (FHD+ 1920x1200 or UHD+ 3840x2400)
-    # Using auto-detection with 1.25x for FHD+ or 2x for UHD+
-    monitor = eDP-1,preferred,0x0,auto
-    # Fallback for external monitors
-    monitor = ,preferred,auto,auto
-    env = GDK_SCALE,1
+    # XPS 9320: Built-in 3456x2160 display at 2x scaling
+    monitor = eDP-1,preferred,0x0,2
+    # External LG 4K monitor at 1.33x, positioned to the right
+    monitor = desc:LG Electronics LG HDR 4K,preferred,1728x0,1.33
+    # Fallback for other external monitors
+    monitor = ,preferred,auto,1.5
+    env = GDK_SCALE,2
   '' else ''
     # Laptop: Auto-detect with native scaling
     monitor = ,preferred,auto,auto
