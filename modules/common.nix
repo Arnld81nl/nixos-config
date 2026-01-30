@@ -127,6 +127,10 @@
   services.udisks2.enable = true;
   services.gvfs.enable = true;
 
+  # Thunderbolt device management daemon (boltd)
+  # Manages device authorization, security, and hot-plug for TB3/TB4
+  services.hardware.bolt.enable = true;
+
   # Network discovery for Nautilus (SMB shares, printers, etc.)
   services.avahi = {
     enable = true;
@@ -259,6 +263,10 @@
     ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/scheduler}="none"
     # SATA SSDs - use mq-deadline
     ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="mq-deadline"
+
+    # Auto-authorize Thunderbolt devices when IOMMU DMA protection is active
+    # This is safe because IOMMU provides hardware-level DMA attack protection
+    ACTION=="add", SUBSYSTEM=="thunderbolt", ATTRS{iommu_dma_protection}=="1", ATTR{authorized}=="0", ATTR{authorized}="1"
   '';
 
   # System state version

@@ -23,36 +23,36 @@
     "usbhid"       # Input: USB HID for external keyboards
   ];
 
-  # ThinkPad-specific power management
-  services.tlp = {
-    enable = true;
-    settings = {
-      # CPU scaling
-      CPU_SCALING_GOVERNOR_ON_AC = "performance";
-      CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
-      CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
-      CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
+  # === Power Management (power-profiles-daemon) ===
+  # PPD provides simple profile switching: balanced, power-saver
+  # Performance profile deliberately not used for battery longevity
+  services.power-profiles-daemon.enable = true;
 
-      # Intel GPU power management
-      INTEL_GPU_MIN_FREQ_ON_AC = 350;
-      INTEL_GPU_MIN_FREQ_ON_BAT = 350;
-      INTEL_GPU_MAX_FREQ_ON_AC = 1300;
-      INTEL_GPU_MAX_FREQ_ON_BAT = 800;
-
-      # ThinkPad battery thresholds (extend battery lifespan)
-      START_CHARGE_THRESH_BAT0 = 75;
-      STOP_CHARGE_THRESH_BAT0 = 80;
+  # === ThinkPad Battery Charge Thresholds ===
+  # PPD doesn't support this, so we set it via systemd
+  # Limits charging to 80% to extend battery lifespan by 2-3x
+  systemd.services.thinkpad-battery-threshold = {
+    description = "Set ThinkPad battery charge thresholds";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
     };
+    script = ''
+      echo 75 > /sys/class/power_supply/BAT0/charge_control_start_threshold
+      echo 80 > /sys/class/power_supply/BAT0/charge_control_end_threshold
+    '';
   };
-
-  # Disable power-profiles-daemon (conflicts with TLP)
-  services.power-profiles-daemon.enable = false;
 
   # Firmware updates via fwupd (ThinkPads are well supported)
   services.fwupd.enable = true;
 
   # Touchscreen and stylus support
   services.libinput.enable = true;
+
+  # IIO sensors for accelerometer (screen rotation, tablet mode detection)
+  hardware.sensor.iio.enable = true;
 
   # Fingerprint reader support (Synaptics Prometheus)
   services.fprintd.enable = true;
@@ -66,10 +66,17 @@
     hyprlock.fprintAuth = true;       # Screen lock
   };
 
-  # ThinkPad ACPI extras (fan control, special keys)
+  # ThinkPad ACPI extras (fan control, special keys, experimental features)
   boot.kernelModules = [ "thinkpad_acpi" ];
   boot.extraModprobeConfig = ''
-    options thinkpad_acpi fan_control=1
+    options thinkpad_acpi fan_control=1 experimental=1
+
+    # Intel AX201 WiFi - balanced settings
+    # uapsd_disable=3: Disable U-APSD for more stable connections
+    options iwlwifi uapsd_disable=3
+
+    # iwlmvm power scheme: 1=Active, 2=Balanced, 3=Low-power
+    options iwlmvm power_scheme=2
   '';
 
   # LUKS configuration is handled by disko (modules/disko/x1yoga.nix)
@@ -79,8 +86,24 @@
   boot.resumeDevice = "/dev/mapper/cryptroot";
   boot.kernelParams = [
     "resume_offset=533760"
-    "i915.enable_psr=0"  # Disable Panel Self Refresh - suspected cause of random crashes
+    "i915.enable_psr=0"  # Disable Panel Self Refresh - prevents random crashes on Tiger Lake
   ];
   zramSwap.enable = lib.mkForce false;
+
+  # VM tuning for DRAM-less NVMe SSD (KIOXIA BG5)
+  # Smaller dirty page batches reduce write amplification
+  boot.kernel.sysctl = {
+    "vm.dirty_ratio" = 10;
+    "vm.dirty_background_ratio" = 5;
+  };
+
+  # Udev rules for hardware optimization
+  services.udev.extraRules = lib.mkAfter ''
+    # Prevent USB autosuspend for Wacom stylus sensor (fixes stylus timeouts)
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="056a", ATTR{power/control}="on"
+
+    # Set NVMe read-ahead to 128KB (optimal for random I/O on DRAM-less SSDs)
+    ACTION=="add|change", KERNEL=="nvme[0-9]*n[0-9]*", ATTR{queue/read_ahead_kb}="128"
+  '';
 
 }
