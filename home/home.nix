@@ -287,8 +287,8 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        # Uses OpenVPN, not openfortivpn
-        if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+        # OpenVPN - check for tun0 with VPN subnet IP
+        if ip addr show tun0 2>/dev/null | grep -q "0.0.0"; then
           echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ●", "icon": ""}'
         else
           echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ○", "icon": ""}'
