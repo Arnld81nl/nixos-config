@@ -20,6 +20,7 @@ let
       rsg = { host = "0.0.0.0:10443"; opItem = "VPN-RSG"; cert = ""; };
       dnv = { host = "0.0.0.0:443"; opItem = "VPN-DNV"; cert = ""; };
       esdal = { host = "0.0.0.0:443"; opItem = "VPN-Esdal"; opAccount = "my"; cert = ""; ovpnConfig = ""; };
+      isk = { wgConfig = ""; };  # WireGuard config from UDM SE
     };
   };
 
@@ -228,11 +229,20 @@ in
           fi
         }
 
+        check_wireguard_isk() {
+          if ip link show wg-isk > /dev/null 2>&1; then
+            echo "true"
+          else
+            echo "false"
+          fi
+        }
+
         dnv_connected=$(check_fortivpn "''${VPN_DNV_HOST%%:*}")
         rsg_connected=$(check_fortivpn "''${VPN_RSG_HOST%%:*}")
         esdal_connected=$(check_openvpn_esdal)
+        isk_connected=$(check_wireguard_isk)
 
-        echo "{\"dnv\": $dnv_connected, \"rsg\": $rsg_connected, \"esdal\": $esdal_connected}"
+        echo "{\"dnv\": $dnv_connected, \"rsg\": $rsg_connected, \"esdal\": $esdal_connected, \"isk\": $isk_connected}"
       '';
     };
 
@@ -282,6 +292,19 @@ in
           echo '{"text": "Esdal ●", "icon": ""}'
         else
           echo '{"text": "Esdal ○", "icon": ""}'
+        fi
+      '';
+    };
+
+    ".local/bin/vpn-status-isk" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        # ISK uses WireGuard
+        if ip link show wg-isk > /dev/null 2>&1; then
+          echo '{"text": "ISK ●", "icon": ""}'
+        else
+          echo '{"text": "ISK ○", "icon": ""}'
         fi
       '';
     };
@@ -372,6 +395,55 @@ in
     # Config content comes from secrets.nix
     ".config/vpn/esdal.ovpn" = lib.mkIf (secrets.vpn.esdal.ovpnConfig != "") {
       text = secrets.vpn.esdal.ovpnConfig;
+    };
+
+    ".local/bin/vpn-isk" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        # ISK VPN - WireGuard to UniFi Dream Machine SE
+
+        CONFIG="$HOME/.config/vpn/wg-isk.conf"
+        NAME="ISK"
+        INTERFACE="wg-isk"
+
+        # Check if already connected
+        if ip link show "$INTERFACE" > /dev/null 2>&1; then
+          echo "Disconnecting $NAME VPN..."
+          sudo wg-quick down "$CONFIG"
+          notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
+          echo "Disconnected."
+          exit 0
+        fi
+
+        if [[ ! -f "$CONFIG" ]]; then
+          echo "Error: WireGuard config not found at $CONFIG"
+          echo "Add your config to secrets.nix and rebuild."
+          exit 1
+        fi
+
+        echo "Connecting to $NAME VPN..."
+        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
+
+        sudo wg-quick up "$CONFIG"
+
+        # Check connection
+        sleep 2
+        if ip link show "$INTERFACE" > /dev/null 2>&1; then
+          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
+          echo "Connected to $NAME VPN."
+        else
+          notify-send "VPN $NAME" "Connection failed" -i dialog-error
+          echo "Connection failed."
+          exit 1
+        fi
+      '';
+    };
+
+    # ISK VPN - WireGuard config (UniFi Dream Machine SE)
+    # Config content comes from secrets.nix
+    ".config/vpn/wg-isk.conf" = lib.mkIf (secrets.vpn.isk.wgConfig != "") {
+      text = secrets.vpn.isk.wgConfig;
     };
 
     # VPN config example (user creates config from this)
@@ -543,6 +615,7 @@ in
     openfortivpn             # Fortinet SSL VPN client
     openfortivpn-webview-qt  # SAML/SSO authentication helper
     openvpn                  # OpenVPN client (for WatchGuard SSL VPN)
+    wireguard-tools          # WireGuard VPN client (for ISK/UniFi)
     libnotify        # notify-send for VPN toggle notifications
     spotify
     lazydocker
