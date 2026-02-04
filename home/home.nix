@@ -6,7 +6,8 @@ let
   shell = osConfig.desktop.shell;
 
   # Load secrets from local file (gitignored) or use placeholders
-  secretsPath = ./secrets.nix;
+  # Use absolute path because gitignored files aren't included in flake source
+  secretsPath = /home/arnold/nixos-config/home/secrets.nix;
   hasSecrets = builtins.pathExists secretsPath;
   secrets = if hasSecrets then import secretsPath else {
     gitEmail = "your-email@example.com";
@@ -18,7 +19,7 @@ let
     vpn = {
       vpn1 = { host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
       vpn2 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
-      vpn3 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
+      vpn3 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; opAccount = "my"; cert = ""; ovpnConfig = ""; };
     };
   };
 
@@ -210,7 +211,7 @@ in
         fi
         source "$CONFIG_FILE"
 
-        check_vpn() {
+        check_fortivpn() {
           local ip="$1"
           if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$ip"; then
             echo "true"
@@ -219,9 +220,17 @@ in
           fi
         }
 
-        vpn2_connected=$(check_vpn "''${VPN_2_HOST%%:*}")
-        vpn1_connected=$(check_vpn "''${VPN_1_HOST%%:*}")
-        vpn3_connected=$(check_vpn "''${VPN_VPN3_HOST%%:*}")
+        check_openvpn_vpn3() {
+          if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+            echo "true"
+          else
+            echo "false"
+          fi
+        }
+
+        vpn2_connected=$(check_fortivpn "''${VPN_2_HOST%%:*}")
+        vpn1_connected=$(check_fortivpn "''${VPN_1_HOST%%:*}")
+        vpn3_connected=$(check_openvpn_vpn3)
 
         echo "{\"vpn2\": $vpn2_connected, \"vpn1\": $vpn1_connected, \"vpn3\": $vpn3_connected}"
       '';
@@ -268,16 +277,12 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        CONFIG_FILE="$HOME/.config/vpn/config"
-        if [[ -f "$CONFIG_FILE" ]]; then
-          source "$CONFIG_FILE"
-          IP="''${VPN_VPN3_HOST%%:*}"
-          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$IP"; then
-            echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ●", "icon": ""}'
-            exit 0
-          fi
+        # Uses OpenVPN, not openfortivpn
+        if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+          echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ●", "icon": ""}'
+        else
+          echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ○", "icon": ""}'
         fi
-        echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ○", "icon": ""}'
       '';
     };
 
@@ -301,8 +306,72 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        exec "$HOME/.local/bin/vpn-toggle" "VPN 3"
+        # OpenVPN-based VPN
+
+        CONFIG="$HOME/.config/vpn/vpn3.ovpn"
+        NAME="${secrets.vpn.vpn3.name or "VPN 3"}"
+        OP_ITEM="${secrets.vpn.vpn3.opItem}"
+        OP_ACCOUNT="${secrets.vpn.vpn3.opAccount}"
+
+        # Check if already connected (look for openvpn with vpn3 config)
+        if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+          echo "Disconnecting $NAME VPN..."
+          sudo pkill -f "openvpn.*vpn3"
+          notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
+          echo "Disconnected."
+          exit 0
+        fi
+
+        if [[ ! -f "$CONFIG" ]]; then
+          echo "Error: OpenVPN config not found at $CONFIG"
+          exit 1
+        fi
+
+        echo "Connecting to $NAME VPN..."
+
+        # Get username and password from 1Password
+        USER=$(op read "op://$OP_ITEM/username" --account "$OP_ACCOUNT" 2>/dev/null)
+        PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
+        if [ -z "$PASSWORD" ] || [ -z "$USER" ]; then
+          notify-send "VPN $NAME" "Failed to get credentials from 1Password" -i dialog-error
+          echo "Error: Could not retrieve credentials from 1Password."
+          echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists with username and password fields."
+          exit 1
+        fi
+
+        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
+
+        # Create temp credentials file (OpenVPN format: username on line 1, password on line 2)
+        CREDS_FILE=$(mktemp)
+        chmod 600 "$CREDS_FILE"
+        echo "$USER" > "$CREDS_FILE"
+        echo "$PASSWORD" >> "$CREDS_FILE"
+
+        # Connect in background with credentials file
+        sudo openvpn --config "$CONFIG" --auth-user-pass "$CREDS_FILE" --daemon --log /tmp/vpn-$NAME.log
+
+        # Wait a moment then clean up credentials file
+        sleep 2
+        rm -f "$CREDS_FILE"
+
+        # Check connection
+        sleep 3
+        if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
+          echo "Connected to $NAME VPN."
+        else
+          notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
+          echo "Connection failed. Check /tmp/vpn-$NAME.log"
+          cat /tmp/vpn-$NAME.log
+          exit 1
+        fi
       '';
+    };
+
+    # VPN 3 - OpenVPN config (OpenVPN)
+    # Config content comes from secrets.nix
+    ".config/vpn/vpn3.ovpn" = lib.mkIf (secrets.vpn.vpn3.ovpnConfig != "") {
+      text = secrets.vpn.vpn3.ovpnConfig;
     };
 
     # VPN config example (user creates config from this)
@@ -473,6 +542,7 @@ in
     remmina          # remote desktop client (RDP, VNC, SSH)
     openfortivpn             # Fortinet SSL VPN client
     openfortivpn-webview-qt  # SAML/SSO authentication helper
+    openvpn                  # OpenVPN client (for OpenVPN)
     libnotify        # notify-send for VPN toggle notifications
     spotify
     lazydocker
