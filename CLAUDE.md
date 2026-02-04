@@ -214,30 +214,44 @@ windowrule = match:class 1[pP]assword, no_screen_share on
 
 **Documentation:** https://wiki.hypr.land/Configuring/Window-Rules/
 
-## Intel i915 Panel Self Refresh (PSR) Crashes
+## Intel i915 Power-Saving Crashes (Tiger Lake)
 
 **Problem:** Random system crashes/freezes on Intel graphics (Tiger Lake, 11th Gen and newer).
 
-**Symptom:** System freezes randomly during normal use. More likely to occur when connected to external displays (e.g., Dell docks).
+**Symptom:** System freezes randomly during normal use, requiring a hard power cycle (battery removal). No errors in system logs - the system just stops.
 
-**Root cause:** Intel Panel Self Refresh (PSR) is a power-saving feature that can cause display corruption and system instability on some hardware combinations.
+**Root cause:** Intel power-saving features (PSR, FBC) and CPU C-states can cause system instability on Tiger Lake hardware. The CPU enters deep sleep states it cannot properly wake from.
 
-**Solution:** Disable PSR via kernel parameter in the host config:
+**Solution:** Disable i915 power features and limit CPU C-states via kernel parameters:
 ```nix
+# In modules/hardware/intel.nix (shared)
 boot.kernelParams = [
-  "i915.enable_psr=0"  # Disable Panel Self Refresh
+  "i915.enable_fbc=0"  # Disable Frame Buffer Compression
+];
+
+# In hosts/x1yoga/default.nix (per-host)
+boot.kernelParams = [
+  "i915.enable_psr=0"        # Disable Panel Self Refresh
+  "i915.enable_guc=0"        # Disable GuC firmware (causes Wayland GPU hangs)
+  "i915.enable_dc=0"         # Disable display C-states
+  "intel_idle.max_cstate=1"  # Limit CPU C-states (prevents deep sleep freezes)
 ];
 ```
 
-**Implementation:** `hosts/x1yoga/default.nix`
+**Implementation:**
+- PSR, GuC, DC, max_cstate: `hosts/x1yoga/default.nix`
+- FBC: `modules/hardware/intel.nix`
 
 **Affected hosts:** x1yoga (ThinkPad X1 Yoga Gen 6, Intel Iris Xe)
 
-**Tested:** January 2026 - crashes stopped after applying this fix.
+**Timeline:**
+- January 2026: Disabled PSR - reduced crash frequency
+- February 2026: Disabled FBC - crashes continued
+- February 2026: Disabled GuC and DC - crashes continued
+- February 2026: Added `intel_idle.max_cstate=1` - limits CPU to shallow sleep states
 
 **Alternative options if issues persist:**
-- `i915.enable_psr=1 i915.enable_psr2_sel_fetch=0` - Disable only PSR2
-- `i915.enable_dc=0` - Disable display power savings entirely (higher power use)
+- `intel_iommu=off` - Disable Intel VT-d (may help with GPU hangs)
 
 ## Plymouth Resolution on Limine
 

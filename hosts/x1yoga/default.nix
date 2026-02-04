@@ -86,7 +86,10 @@
   boot.resumeDevice = "/dev/mapper/cryptroot";
   boot.kernelParams = [
     "resume_offset=533760"
-    "i915.enable_psr=0"  # Disable Panel Self Refresh - prevents random crashes on Tiger Lake
+    "i915.enable_psr=0"        # Disable Panel Self Refresh - prevents random crashes on Tiger Lake
+    "i915.enable_guc=0"        # Disable GuC firmware - causes GPU hangs on Wayland
+    "i915.enable_dc=0"         # Disable display C-states - prevents screen freeze hangs
+    "intel_idle.max_cstate=1"  # Limit CPU C-states - prevents deep sleep freezes on Tiger Lake
   ];
   zramSwap.enable = lib.mkForce false;
 

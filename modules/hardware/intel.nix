@@ -28,7 +28,7 @@
   # some Tiger Lake laptops. Enable per-host if your hardware supports it.
   # See CLAUDE.md "Intel i915 Panel Self Refresh (PSR) Crashes" for details.
   boot.kernelParams = [
-    "i915.enable_fbc=1"         # Frame Buffer Compression (power saving)
+    "i915.enable_fbc=0"         # Disable Frame Buffer Compression (can cause freezes on Tiger Lake)
   ];
 
   # Environment variables for Intel Wayland
