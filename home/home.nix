@@ -20,6 +20,7 @@ let
       vpn1 = { host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
       vpn2 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
       vpn3 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; opAccount = "my"; cert = ""; ovpnConfig = ""; };
+      vpn4 = { wgConfig = ""; };  
     };
   };
 
@@ -228,11 +229,20 @@ in
           fi
         }
 
+        check_wireguard_vpn4() {
+          if ip link show wg-vpn4 > /dev/null 2>&1; then
+            echo "true"
+          else
+            echo "false"
+          fi
+        }
+
         vpn2_connected=$(check_fortivpn "''${VPN_2_HOST%%:*}")
         vpn1_connected=$(check_fortivpn "''${VPN_1_HOST%%:*}")
         vpn3_connected=$(check_openvpn_vpn3)
+        vpn4_connected=$(check_wireguard_vpn4)
 
-        echo "{\"vpn2\": $vpn2_connected, \"vpn1\": $vpn1_connected, \"vpn3\": $vpn3_connected}"
+        echo "{\"vpn2\": $vpn2_connected, \"vpn1\": $vpn1_connected, \"vpn3\": $vpn3_connected, \"vpn4\": $vpn4_connected}"
       '';
     };
 
@@ -282,6 +292,19 @@ in
           echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ●", "icon": ""}'
         else
           echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ○", "icon": ""}'
+        fi
+      '';
+    };
+
+    ".local/bin/vpn-status-4" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        # WireGuard VPN
+        if ip link show wg-vpn4 > /dev/null 2>&1; then
+          echo '{"text": "${secrets.vpn.vpn4.name or "VPN 4"} ●", "icon": ""}'
+        else
+          echo '{"text": "${secrets.vpn.vpn4.name or "VPN 4"} ○", "icon": ""}'
         fi
       '';
     };
@@ -372,6 +395,55 @@ in
     # Config content comes from secrets.nix
     ".config/vpn/vpn3.ovpn" = lib.mkIf (secrets.vpn.vpn3.ovpnConfig != "") {
       text = secrets.vpn.vpn3.ovpnConfig;
+    };
+
+    ".local/bin/vpn-4" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        # VPN 4 - WireGuard
+
+        CONFIG="$HOME/.config/vpn/wg-vpn4.conf"
+        NAME="VPN 4"
+        INTERFACE="wg-vpn4"
+
+        # Check if already connected
+        if ip link show "$INTERFACE" > /dev/null 2>&1; then
+          echo "Disconnecting $NAME VPN..."
+          sudo wg-quick down "$CONFIG"
+          notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
+          echo "Disconnected."
+          exit 0
+        fi
+
+        if [[ ! -f "$CONFIG" ]]; then
+          echo "Error: WireGuard config not found at $CONFIG"
+          echo "Add your config to secrets.nix and rebuild."
+          exit 1
+        fi
+
+        echo "Connecting to $NAME VPN..."
+        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
+
+        sudo wg-quick up "$CONFIG"
+
+        # Check connection
+        sleep 2
+        if ip link show "$INTERFACE" > /dev/null 2>&1; then
+          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
+          echo "Connected to $NAME VPN."
+        else
+          notify-send "VPN $NAME" "Connection failed" -i dialog-error
+          echo "Connection failed."
+          exit 1
+        fi
+      '';
+    };
+
+    # VPN 4 - WireGuard config
+    # Config content comes from secrets.nix
+    ".config/vpn/wg-vpn4.conf" = lib.mkIf (secrets.vpn.vpn4.wgConfig != "") {
+      text = secrets.vpn.vpn4.wgConfig;
     };
 
     # VPN config example (user creates config from this)
@@ -543,6 +615,7 @@ in
     openfortivpn             # Fortinet SSL VPN client
     openfortivpn-webview-qt  # SAML/SSO authentication helper
     openvpn                  # OpenVPN client (for OpenVPN)
+    wireguard-tools          # WireGuard VPN client ()
     libnotify        # notify-send for VPN toggle notifications
     spotify
     lazydocker
