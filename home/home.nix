@@ -287,8 +287,8 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        # Esdal uses OpenVPN, not openfortivpn
-        if pgrep -fa "openvpn.*esdal" > /dev/null 2>&1; then
+        # Esdal uses OpenVPN - check for tun0 with Esdal subnet IP
+        if ip addr show tun0 2>/dev/null | grep -q "192.168.255"; then
           echo '{"text": "Esdal ●", "icon": ""}'
         else
           echo '{"text": "Esdal ○", "icon": ""}'
