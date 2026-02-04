@@ -6,7 +6,8 @@ let
   shell = osConfig.desktop.shell;
 
   # Load secrets from local file (gitignored) or use placeholders
-  secretsPath = ./secrets.nix;
+  # Use absolute path because gitignored files aren't included in flake source
+  secretsPath = /home/arnold/nixos-config/home/secrets.nix;
   hasSecrets = builtins.pathExists secretsPath;
   secrets = if hasSecrets then import secretsPath else {
     gitEmail = "your-email@example.com";
@@ -18,7 +19,7 @@ let
     vpn = {
       rsg = { host = "0.0.0.0:10443"; opItem = "VPN-RSG"; cert = ""; };
       dnv = { host = "0.0.0.0:443"; opItem = "VPN-DNV"; cert = ""; };
-      esdal = { host = "0.0.0.0:443"; opItem = "VPN-Esdal"; cert = ""; };
+      esdal = { host = "0.0.0.0:443"; opItem = "VPN-Esdal"; opAccount = "my"; cert = ""; ovpnConfig = ""; };
     };
   };
 
@@ -210,7 +211,7 @@ in
         fi
         source "$CONFIG_FILE"
 
-        check_vpn() {
+        check_fortivpn() {
           local ip="$1"
           if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$ip"; then
             echo "true"
@@ -219,9 +220,17 @@ in
           fi
         }
 
-        dnv_connected=$(check_vpn "''${VPN_DNV_HOST%%:*}")
-        rsg_connected=$(check_vpn "''${VPN_RSG_HOST%%:*}")
-        esdal_connected=$(check_vpn "''${VPN_ESDAL_HOST%%:*}")
+        check_openvpn_esdal() {
+          if pgrep -fa "openvpn.*esdal" > /dev/null 2>&1; then
+            echo "true"
+          else
+            echo "false"
+          fi
+        }
+
+        dnv_connected=$(check_fortivpn "''${VPN_DNV_HOST%%:*}")
+        rsg_connected=$(check_fortivpn "''${VPN_RSG_HOST%%:*}")
+        esdal_connected=$(check_openvpn_esdal)
 
         echo "{\"dnv\": $dnv_connected, \"rsg\": $rsg_connected, \"esdal\": $esdal_connected}"
       '';
@@ -268,16 +277,12 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        CONFIG_FILE="$HOME/.config/vpn/config"
-        if [[ -f "$CONFIG_FILE" ]]; then
-          source "$CONFIG_FILE"
-          IP="''${VPN_ESDAL_HOST%%:*}"
-          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$IP"; then
-            echo '{"text": "Esdal ●", "icon": ""}'
-            exit 0
-          fi
+        # Esdal uses OpenVPN, not openfortivpn
+        if pgrep -fa "openvpn.*esdal" > /dev/null 2>&1; then
+          echo '{"text": "Esdal ●", "icon": ""}'
+        else
+          echo '{"text": "Esdal ○", "icon": ""}'
         fi
-        echo '{"text": "Esdal ○", "icon": ""}'
       '';
     };
 
@@ -301,8 +306,72 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        exec "$HOME/.local/bin/vpn-toggle" "Esdal"
+        # Esdal VPN - WatchGuard SSL VPN using OpenVPN
+
+        CONFIG="$HOME/.config/vpn/esdal.ovpn"
+        NAME="Esdal"
+        OP_ITEM="${secrets.vpn.esdal.opItem}"
+        OP_ACCOUNT="${secrets.vpn.esdal.opAccount}"
+
+        # Check if already connected (look for openvpn with esdal config)
+        if pgrep -fa "openvpn.*esdal" > /dev/null 2>&1; then
+          echo "Disconnecting $NAME VPN..."
+          sudo pkill -f "openvpn.*esdal"
+          notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
+          echo "Disconnected."
+          exit 0
+        fi
+
+        if [[ ! -f "$CONFIG" ]]; then
+          echo "Error: OpenVPN config not found at $CONFIG"
+          exit 1
+        fi
+
+        echo "Connecting to $NAME VPN..."
+
+        # Get username and password from 1Password
+        USER=$(op read "op://$OP_ITEM/username" --account "$OP_ACCOUNT" 2>/dev/null)
+        PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
+        if [ -z "$PASSWORD" ] || [ -z "$USER" ]; then
+          notify-send "VPN $NAME" "Failed to get credentials from 1Password" -i dialog-error
+          echo "Error: Could not retrieve credentials from 1Password."
+          echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists with username and password fields."
+          exit 1
+        fi
+
+        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
+
+        # Create temp credentials file (OpenVPN format: username on line 1, password on line 2)
+        CREDS_FILE=$(mktemp)
+        chmod 600 "$CREDS_FILE"
+        echo "$USER" > "$CREDS_FILE"
+        echo "$PASSWORD" >> "$CREDS_FILE"
+
+        # Connect in background with credentials file
+        sudo openvpn --config "$CONFIG" --auth-user-pass "$CREDS_FILE" --daemon --log /tmp/vpn-$NAME.log
+
+        # Wait a moment then clean up credentials file
+        sleep 2
+        rm -f "$CREDS_FILE"
+
+        # Check connection
+        sleep 3
+        if pgrep -fa "openvpn.*esdal" > /dev/null 2>&1; then
+          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
+          echo "Connected to $NAME VPN."
+        else
+          notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
+          echo "Connection failed. Check /tmp/vpn-$NAME.log"
+          cat /tmp/vpn-$NAME.log
+          exit 1
+        fi
       '';
+    };
+
+    # Esdal VPN - OpenVPN config (WatchGuard SSL VPN)
+    # Config content comes from secrets.nix
+    ".config/vpn/esdal.ovpn" = lib.mkIf (secrets.vpn.esdal.ovpnConfig != "") {
+      text = secrets.vpn.esdal.ovpnConfig;
     };
 
     # VPN config example (user creates config from this)
@@ -473,6 +542,7 @@ in
     remmina          # remote desktop client (RDP, VNC, SSH)
     openfortivpn             # Fortinet SSL VPN client
     openfortivpn-webview-qt  # SAML/SSO authentication helper
+    openvpn                  # OpenVPN client (for WatchGuard SSL VPN)
     libnotify        # notify-send for VPN toggle notifications
     spotify
     lazydocker

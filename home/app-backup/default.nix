@@ -367,6 +367,59 @@ let
       # Backup keys if they exist locally
       backup_keys || true
 
+      # Backup configs (secrets.nix, vpn config, app-backup config)
+      backup_configs() {
+        local staging_dir="$TEMP_DIR/configs-staging"
+        mkdir -p "$staging_dir/configs"
+        local count=0
+
+        # Add secrets.nix (contains VPN certs, IPs, 1Password paths)
+        local secrets_path="/home/arnold/nixos-config/home/secrets.nix"
+        if [[ -f "$secrets_path" ]]; then
+          cp "$secrets_path" "$staging_dir/configs/secrets.nix"
+          ((count++)) || true
+          log_info "Added secrets.nix"
+        fi
+
+        # Add VPN config
+        local vpn_config="$HOME/.config/vpn/config"
+        if [[ -f "$vpn_config" ]]; then
+          cp "$vpn_config" "$staging_dir/configs/vpn-config"
+          ((count++)) || true
+          log_info "Added vpn-config"
+        fi
+
+        # Add app-backup config
+        local app_config="$HOME/.config/app-backup/config"
+        if [[ -f "$app_config" ]]; then
+          cp "$app_config" "$staging_dir/configs/app-backup-config"
+          ((count++)) || true
+          log_info "Added app-backup-config"
+        fi
+
+        if [[ $count -eq 0 ]]; then
+          log_warn "No config files found to backup"
+          return 1
+        fi
+
+        log_info "Backing up $count config file(s)..."
+        local archive="$TEMP_DIR/configs.tar.gz"
+        tar --create --gzip --file="$archive" \
+          --directory="$staging_dir" \
+          --sort=name \
+          --mtime='2024-01-01' \
+          configs
+
+        encrypt_archive "$archive" "$TEMP_DIR/configs.tar.gz.age"
+        rm -rf "$staging_dir"
+
+        log_success "Configs backed up"
+        return 0
+      }
+
+      # Backup configs
+      backup_configs || true
+
       # Push to GitHub if requested
       if [[ "$PUSH" == "true" ]]; then
         echo ""
@@ -850,7 +903,81 @@ let
         return 0
       }
 
-      # Restore keys first
+      # Restore configs (secrets.nix, vpn config, app-backup config)
+      restore_configs() {
+        local age_file="$LOCAL_REPO_PATH/configs.tar.gz.age"
+
+        if [[ ! -f "$age_file" ]]; then
+          log_info "No configs backup found - skipping configs restore"
+          return 0
+        fi
+
+        log_info "Restoring configs..."
+
+        local tar_file="$TEMP_DIR/configs.tar.gz"
+        local extract_dir="$TEMP_DIR/configs-extract"
+        mkdir -p "$extract_dir"
+
+        get_age_key | age --decrypt --identity - --output "$tar_file" "$age_file" || {
+          log_warn "Failed to decrypt configs backup"
+          return 1
+        }
+
+        tar --extract --gzip --file="$tar_file" --directory="$extract_dir"
+
+        local count=0
+
+        # Restore secrets.nix
+        if [[ -f "$extract_dir/configs/secrets.nix" ]]; then
+          local secrets_path="/home/arnold/nixos-config/home/secrets.nix"
+          if [[ -f "$secrets_path" && "$FORCE" != "true" ]]; then
+            log_info "secrets.nix already exists - skipping (use --force to overwrite)"
+          else
+            cp "$extract_dir/configs/secrets.nix" "$secrets_path"
+            chmod 600 "$secrets_path"
+            log_success "Restored secrets.nix"
+            ((count++)) || true
+          fi
+        fi
+
+        # Restore VPN config
+        if [[ -f "$extract_dir/configs/vpn-config" ]]; then
+          local vpn_config="$HOME/.config/vpn/config"
+          mkdir -p "$(dirname "$vpn_config")"
+          # VPN config is a symlink managed by Home Manager, copy to a local override location
+          log_info "VPN config found (managed by Home Manager - rebuild to apply)"
+          ((count++)) || true
+        fi
+
+        # Restore app-backup config
+        if [[ -f "$extract_dir/configs/app-backup-config" ]]; then
+          local app_config="$HOME/.config/app-backup/config"
+          if [[ -f "$app_config" && "$FORCE" != "true" ]]; then
+            log_info "app-backup config already exists - skipping"
+          else
+            mkdir -p "$(dirname "$app_config")"
+            cp "$extract_dir/configs/app-backup-config" "$app_config"
+            chmod 600 "$app_config"
+            log_success "Restored app-backup config"
+            ((count++)) || true
+          fi
+        fi
+
+        # Cleanup
+        shred -u "$tar_file" 2>/dev/null || rm -f "$tar_file"
+        rm -rf "$extract_dir"
+
+        if [[ $count -gt 0 ]]; then
+          log_success "Restored $count config file(s)"
+          log_info "Run 'sudo nixos-rebuild switch --flake . --impure' to apply secrets.nix"
+        fi
+        return 0
+      }
+
+      # Restore configs first (secrets.nix needed for rebuild)
+      restore_configs || true
+
+      # Restore keys
       restore_keys || true
 
       # Restore Chrome
