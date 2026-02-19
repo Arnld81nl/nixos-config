@@ -8,6 +8,7 @@
 # - Saved passwords (encrypted by browser/app)
 # - Firefox Sync / Chrome sync data
 # - Current session tabs
+# - Remmina connection profiles and preferences
 #
 # Does NOT backup: cache, history, extensions, themes, or other data.
 # Typical backup size: <15MB (vs 3GB+ for full profiles)
@@ -121,6 +122,7 @@ let
             echo "This backs up ONLY essential files for login restoration:"
             echo "  Chrome: cookies, login data, sessions, preferences"
             echo "  Firefox: cookies, logins, sessions, sync data"
+            echo "  Remmina: connection profiles, preferences"
             exit 0
             ;;
           *) log_error "Unknown option: $1" ;;
@@ -134,6 +136,7 @@ let
         pgrep -x "firefox" >/dev/null 2>&1 && running="''${running:+$running, }Firefox"
         pgrep -x "firefox-bin" >/dev/null 2>&1 && running="''${running:+$running, }Firefox"
         pgrep -x ".firefox-wrapped" >/dev/null 2>&1 && running="''${running:+$running, }Firefox"
+        pgrep -x "remmina" >/dev/null 2>&1 && running="''${running:+$running, }Remmina"
         if [[ -n "$running" ]]; then
           if [[ "$FORCE" == "true" ]]; then
             log_warn "Apps running ($running) - continuing with --force"
@@ -263,6 +266,60 @@ let
         return 0
       }
 
+      # Create Remmina archive (preferences + connection profiles)
+      backup_remmina() {
+        local remmina_config="$HOME/.config/remmina"
+        local remmina_data="$HOME/.local/share/remmina"
+        local archive="$TEMP_DIR/remmina-profile.tar.gz"
+        local staging_dir="$TEMP_DIR/remmina-staging"
+
+        if [[ ! -d "$remmina_config" ]] && [[ ! -d "$remmina_data" ]]; then
+          log_warn "Remmina directories not found"
+          return 1
+        fi
+
+        log_info "Backing up Remmina profiles..."
+        mkdir -p "$staging_dir/config" "$staging_dir/data"
+
+        local count=0
+
+        # Copy preferences (includes encryption secret for stored passwords)
+        if [[ -f "$remmina_config/remmina.pref" ]]; then
+          cp "$remmina_config/remmina.pref" "$staging_dir/config/"
+          ((count++)) || true
+        fi
+
+        # Copy connection profiles
+        if [[ -d "$remmina_data" ]]; then
+          for f in "$remmina_data"/*.remmina; do
+            if [[ -f "$f" ]]; then
+              cp "$f" "$staging_dir/data/"
+              ((count++)) || true
+            fi
+          done
+        fi
+
+        if [[ $count -eq 0 ]]; then
+          log_warn "No Remmina files found to backup"
+          return 1
+        fi
+
+        log_info "Found $count Remmina files"
+
+        tar --create --gzip --file="$archive" \
+          --directory="$staging_dir" \
+          --sort=name \
+          --mtime='2024-01-01' \
+          .
+
+        rm -rf "$staging_dir"
+
+        local size
+        size=$(du -h "$archive" | cut -f1)
+        log_success "Remmina archive: $size"
+        return 0
+      }
+
       # Encrypt with age (only needs public key - no 1Password needed)
       encrypt_archive() {
         local src="$1" dst="$2"
@@ -312,6 +369,11 @@ let
       # Firefox backup
       if backup_firefox; then
         encrypt_archive "$TEMP_DIR/firefox-profile.tar.gz" "$TEMP_DIR/firefox-profile.tar.gz.age"
+      fi
+
+      # Remmina backup
+      if backup_remmina; then
+        encrypt_archive "$TEMP_DIR/remmina-profile.tar.gz" "$TEMP_DIR/remmina-profile.tar.gz.age"
       fi
 
       # Keys backup (encrypted with age key, same as app profiles)
@@ -530,6 +592,7 @@ let
             echo "This restores essential files for login restoration:"
             echo "  Chrome: cookies, login data, sessions, preferences"
             echo "  Firefox: cookies, logins, sessions, sync data"
+            echo "  Remmina: connection profiles, preferences"
             echo ""
             echo "Files are merged into existing app profiles."
             exit 0
@@ -545,6 +608,7 @@ let
         pgrep -x "firefox" >/dev/null 2>&1 && running="''${running:+$running, }Firefox"
         pgrep -x "firefox-bin" >/dev/null 2>&1 && running="''${running:+$running, }Firefox"
         pgrep -x ".firefox-wrapped" >/dev/null 2>&1 && running="''${running:+$running, }Firefox"
+        pgrep -x "remmina" >/dev/null 2>&1 && running="''${running:+$running, }Remmina"
         if [[ -n "$running" ]]; then
           if [[ "$FORCE" == "true" ]]; then
             log_warn "Apps running ($running) - continuing with --force"
@@ -804,6 +868,55 @@ let
         return 0
       }
 
+      # Restore Remmina profiles and preferences
+      restore_remmina() {
+        local age_file="$1"
+        local remmina_config="$HOME/.config/remmina"
+        local remmina_data="$HOME/.local/share/remmina"
+
+        if [[ ! -f "$age_file" ]]; then
+          log_warn "Remmina backup not found: $age_file"
+          return 1
+        fi
+
+        log_info "Restoring Remmina profiles..."
+
+        # Decrypt
+        local tar_file="$TEMP_DIR/remmina-profile.tar.gz"
+        local extract_dir="$TEMP_DIR/remmina-extract"
+        mkdir -p "$extract_dir"
+
+        get_age_key | age --decrypt --identity - --output "$tar_file" "$age_file"
+        tar --extract --gzip --file="$tar_file" --directory="$extract_dir"
+
+        local count=0
+
+        # Restore preferences
+        if [[ -f "$extract_dir/config/remmina.pref" ]]; then
+          mkdir -p "$remmina_config"
+          cp "$extract_dir/config/remmina.pref" "$remmina_config/"
+          ((count++)) || true
+        fi
+
+        # Restore connection profiles
+        if [[ -d "$extract_dir/data" ]]; then
+          mkdir -p "$remmina_data"
+          for f in "$extract_dir/data"/*.remmina; do
+            if [[ -f "$f" ]]; then
+              cp "$f" "$remmina_data/"
+              ((count++)) || true
+            fi
+          done
+        fi
+
+        # Cleanup
+        shred -u "$tar_file" 2>/dev/null || rm -f "$tar_file"
+        rm -rf "$extract_dir"
+
+        log_success "Restored $count Remmina files"
+        return 0
+      }
+
       # Main
       log_info "App Profile Restore (Essential Files Only)"
       echo ""
@@ -985,6 +1098,9 @@ let
 
       # Restore Firefox
       restore_firefox "$LOCAL_REPO_PATH/firefox-profile.tar.gz.age" || true
+
+      # Restore Remmina
+      restore_remmina "$LOCAL_REPO_PATH/remmina-profile.tar.gz.age" || true
 
       echo ""
       log_success "Restore complete!"
