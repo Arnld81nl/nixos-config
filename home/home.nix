@@ -763,8 +763,8 @@ in
   programs.app-backup = {
     enable = true;
     # These are placeholder values - override in ~/.config/app-backup/config after rebuild
-    repoUrl = "git@github.com:YOUR_USER/private-settings.git";
-    ageRecipient = "age1your-public-key-here";
+    repoUrl = "git@github.com:Arnld81nl/private-settings.git";
+    ageRecipient = "age10jwzf8346m6pfkhqvz8x9aryc2a04afjqls7mycl0gkr3fpqgghsxvc854";
     ageKey1Password = secrets.onePassword.ageKey;
     ageKeyPath = "~/.config/age/key.txt";
     sshKey1Password = secrets.onePassword.sshKey;
