@@ -19,7 +19,7 @@ let
     vpn = {
       vpn1 = { host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
       vpn2 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
-      vpn3 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; opAccount = "my"; cert = ""; ovpnConfig = ""; };
+      vpn3 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; opAccount = "my"; cert = ""; ovpnConfig = ""; subnet = "0.0.0"; };
       vpn4 = { wgConfig = ""; };  
     };
   };
@@ -344,7 +344,7 @@ in
       text = ''
         #!/usr/bin/env bash
         # OpenVPN - check for tun0 with VPN subnet IP
-        if ip addr show tun0 2>/dev/null | grep -q "0.0.0"; then
+        if ip addr show tun0 2>/dev/null | grep -q "${secrets.vpn.vpn3.subnet or "0.0.0"}"; then
           echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ●", "icon": ""}'
         else
           echo '{"text": "${secrets.vpn.vpn3.name or "VPN 3"} ○", "icon": ""}'
@@ -569,7 +569,7 @@ in
         client
         dev tun
         proto tcp
-        remote 0.0.0.0 443
+        remote ${builtins.replaceStrings [":"] [" "] (secrets.vpn.vpn3.host or "0.0.0.0:443")}
         resolv-retry infinite
         nobind
         persist-key
@@ -634,6 +634,11 @@ in
       "application/vnd.ms-powerpoint"
     ];
   };
+
+  # OneDrive config - sync to ~/Documents
+  xdg.configFile."onedrive/config".text = ''
+    sync_dir = "~/Documents"
+  '';
 
   # OneDriveGUI with proper icon
   xdg.desktopEntries.onedrivegui = {

@@ -79,6 +79,9 @@
   # Tailscale VPN
   services.tailscale.enable = true;
 
+  # OneDrive sync (abraunegg client with systemd monitor service)
+  services.onedrive.enable = true;
+
   # Firewall
   networking.firewall = {
     enable = true;
