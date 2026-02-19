@@ -17,10 +17,10 @@ let
       sshKey = "op://Private/ssh-key/private key";
     };
     vpn = {
-      vpn1 = { host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
-      vpn2 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
-      vpn3 = { host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; opAccount = "my"; cert = ""; ovpnConfig = ""; subnet = "0.0.0"; };
-      vpn4 = { wgConfig = ""; };  
+      vpn1 = { name = "VPN 1"; host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
+      vpn2 = { name = "VPN 2"; host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
+      vpn3 = { name = "VPN 3"; host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; opAccount = "my"; cert = ""; ovpnConfig = ""; subnet = "0.0.0"; };
+      vpn4 = { name = "VPN 4"; wgConfig = ""; };
     };
   };
 
@@ -160,7 +160,7 @@ in
         # Extract just IP for pgrep (HOST is ip:port, process shows "ip port")
         IP="''${HOST%%:*}"
 
-        # Handle OpenVPN-based VPNs (like VPN3/SSL VPN vendor)
+        # Handle OpenVPN-based VPNs
         if [[ "$VPN_TYPE" == "openvpn" ]]; then
           # Check if this specific OpenVPN is connected
           if pgrep -x openvpn > /dev/null 2>&1 && pgrep -fa openvpn | grep -q "$IP"; then
@@ -387,12 +387,12 @@ in
         #!/usr/bin/env bash
         # OpenVPN-based VPN
 
-        CONFIG="$HOME/.config/vpn/vpn3.ovpn"
+        CONFIG="$HOME/.config/vpn/vpn3/vpn3.ovpn"
         NAME="${secrets.vpn.vpn3.name or "VPN 3"}"
         OP_ITEM="${secrets.vpn.vpn3.opItem}"
         OP_ACCOUNT="${secrets.vpn.vpn3.opAccount}"
 
-        # Check if already connected (look for openvpn with vpn3 config)
+        # Check if already connected
         if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
           echo "Disconnecting $NAME VPN..."
           sudo pkill -f "openvpn.*vpn3"
@@ -447,8 +447,7 @@ in
       '';
     };
 
-    # VPN 3 - OpenVPN config (OpenVPN)
-    # Config content comes from secrets.nix
+    # VPN 3 - OpenVPN config (alternative, from secrets)
     ".config/vpn/vpn3.ovpn" = lib.mkIf (secrets.vpn.vpn3.ovpnConfig != "") {
       text = secrets.vpn.vpn3.ovpnConfig;
     };
@@ -457,10 +456,10 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        # VPN 4 - WireGuard
+        # WireGuard VPN
 
         CONFIG="$HOME/.config/vpn/wg-vpn4.conf"
-        NAME="VPN 4"
+        NAME="${secrets.vpn.vpn4.name or "VPN 4"}"
         INTERFACE="wg-vpn4"
 
         # Check if already connected
@@ -496,8 +495,7 @@ in
       '';
     };
 
-    # VPN 4 - WireGuard config
-    # Config content comes from secrets.nix
+    # VPN 4 - WireGuard config (from secrets)
     ".config/vpn/wg-vpn4.conf" = lib.mkIf (secrets.vpn.vpn4.wgConfig != "") {
       text = secrets.vpn.vpn4.wgConfig;
     };
@@ -511,20 +509,20 @@ in
         # 1Password account for work items
         OP_ACCOUNT="my"
 
-        # VPN 1 (username/password from 1Password)
+        # VPN 1 (Fortinet, username/password from 1Password)
         VPN_1_HOST="0.0.0.0:10443"
         VPN_1_OP_ITEM="Vault/VPN-Item"
         VPN_1_CERT=""  # Will be shown on first connect
 
-        # VPN 2 (username/password from 1Password)
+        # VPN 2 (Fortinet, username/password from 1Password)
         VPN_2_HOST="0.0.0.0:443"
         VPN_2_OP_ITEM="Vault/VPN-Item"
         VPN_2_CERT=""  # Will be shown on first connect
 
-        # VPN 3 (username/password from 1Password)
-        VPN_VPN3_HOST="0.0.0.0:443"
-        VPN_VPN3_OP_ITEM="Vault/VPN-Item"
-        VPN_VPN3_CERT=""  # Needs separate certificates
+        # VPN 3 (OpenVPN, username/password from 1Password)
+        VPN_3_HOST="0.0.0.0:443"
+        VPN_3_OP_ITEM="Vault/VPN-Item"
+        VPN_3_CERT=""  # Needs separate certificates
       '';
     };
 
@@ -536,25 +534,25 @@ in
         # 1Password account
         OP_ACCOUNT="${secrets.onePassword.account}"
 
-        # VPN 1
+        # VPN 1 (Fortinet)
         VPN_1_HOST="${secrets.vpn.vpn1.host}"
         VPN_1_OP_ITEM="${secrets.vpn.vpn1.opItem}"
         VPN_1_CERT="${secrets.vpn.vpn1.cert}"
 
-        # VPN 2
+        # VPN 2 (Fortinet)
         VPN_2_HOST="${secrets.vpn.vpn2.host}"
         VPN_2_OP_ITEM="${secrets.vpn.vpn2.opItem}"
         VPN_2_CERT="${secrets.vpn.vpn2.cert}"
 
         # VPN 3 (OpenVPN with client certificates)
-        VPN_VPN3_HOST="${secrets.vpn.vpn3.host}"
-        VPN_VPN3_OP_ITEM="${secrets.vpn.vpn3.opItem}"
-        VPN_VPN3_CERT="${secrets.vpn.vpn3.cert}"
-        VPN_VPN3_TYPE="openvpn"
+        VPN_3_HOST="${secrets.vpn.vpn3.host}"
+        VPN_3_OP_ITEM="${secrets.vpn.vpn3.opItem}"
+        VPN_3_CERT="${secrets.vpn.vpn3.cert}"
+        VPN_3_TYPE="openvpn"
       '';
     };
 
-    # VPN3 VPN certificates (OpenVPN)
+    # VPN 3 certificates (OpenVPN)
     ".config/vpn/vpn3/ca.crt" = {
       text = secrets.vpn.vpn3.caCert or "";
     };
@@ -707,8 +705,8 @@ in
     remmina          # remote desktop client (RDP, VNC, SSH)
     openfortivpn             # Fortinet SSL VPN client
     openfortivpn-webview-qt  # SAML/SSO authentication helper
-    openvpn                  # OpenVPN client (for OpenVPN)
-    wireguard-tools          # WireGuard VPN client ()
+    openvpn                  # OpenVPN client
+    wireguard-tools          # WireGuard VPN client
     libnotify        # notify-send for VPN toggle notifications
     spotify
     lazydocker

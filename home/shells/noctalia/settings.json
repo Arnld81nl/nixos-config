@@ -206,7 +206,7 @@
                     "rightClickUpdateText": false,
                     "showIcon": false,
                     "textCollapse": "",
-                    "textCommand": "ip addr show tun0 2>/dev/null | grep -q '0.0.0' && echo '${secrets.vpn.vpn3.name or "VPN 3"} ●' || echo '${secrets.vpn.vpn3.name or "VPN 3"} ○'",
+                    "textCommand": "~/.local/bin/vpn-status-3 | jq -r .text",
                     "textIntervalMs": 2000,
                     "textStream": false,
                     "wheelDownExec": "",
