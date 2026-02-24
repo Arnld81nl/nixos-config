@@ -143,6 +143,13 @@
         username = "arnold";
       };
 
+      # HP ZBook Ultra G1a (AMD Strix Halo + RDNA 3.5)
+      # Default: Noctalia | Specialisations: illogical
+      G1a = mkNixosSystem {
+        hostname = "G1a";
+        username = "arnold";
+      };
+
       # Forge Installer ISO
       # Build: nix build .#nixosConfigurations.iso.config.system.build.isoImage
       iso = nixpkgs.lib.nixosSystem {

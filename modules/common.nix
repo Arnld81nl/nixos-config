@@ -236,6 +236,17 @@
   security.pam.services.greetd.enableGnomeKeyring = true;
   security.pam.services.login.enableGnomeKeyring = true;
 
+  # Fingerprint auth support (only on hosts with fprintd enabled, e.g. G1a)
+  # Clean PAM service for Noctalia lock screen (no GNOME Keyring interference)
+  security.pam.services.noctalia = lib.mkIf config.services.fprintd.enable {};
+  # Setuid wrapper for polkit-agent-helper-1 (needed by badged polkit agent)
+  security.wrappers.polkit-agent-helper-1 = lib.mkIf config.services.fprintd.enable {
+    setuid = true;
+    owner = "root";
+    group = "root";
+    source = "${config.security.polkit.package.out}/lib/polkit-1/polkit-agent-helper-1";
+  };
+
   # Kernel hardening
   boot.kernel.sysctl = {
     # Restrict kernel pointer exposure

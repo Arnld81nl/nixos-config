@@ -166,6 +166,7 @@ in
           if pgrep -x openvpn > /dev/null 2>&1 && pgrep -fa openvpn | grep -q "$IP"; then
             echo "Disconnecting $NAME VPN..."
             sudo pkill -f "openvpn.*$IP"
+            sudo rm -f "/tmp/.vpn-creds-$NAME"
             notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
             echo "Disconnected."
             exit 0
@@ -185,20 +186,18 @@ in
 
           notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
 
-          # Create temp file with credentials for auth-user-pass
-          CREDS_FILE=$(mktemp)
+          # Create credentials file for auth-user-pass (persistent so OpenVPN can re-read on reconnect)
+          CREDS_FILE="/tmp/.vpn-creds-$NAME"
           echo "$USER" > "$CREDS_FILE"
           echo "$PASSWORD" >> "$CREDS_FILE"
-          chmod 600 "$CREDS_FILE"
+          sudo chmod 600 "$CREDS_FILE"
+          sudo chown root:root "$CREDS_FILE"
 
           # Expand $HOME in the ovpn file paths
           OVPN_CONFIG="$HOME/.config/vpn/vpn3/vpn3.ovpn"
 
           # Connect using OpenVPN with credentials file
           sudo openvpn --config "$OVPN_CONFIG" --auth-user-pass "$CREDS_FILE" --daemon --log /tmp/vpn-$NAME.log
-
-          # Clean up credentials file after a brief delay (give openvpn time to read it)
-          (sleep 2 && rm -f "$CREDS_FILE") &
 
           # Wait a moment and check if connected
           sleep 5
@@ -396,6 +395,7 @@ in
         if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
           echo "Disconnecting $NAME VPN..."
           sudo pkill -f "openvpn.*vpn3"
+          sudo rm -f "/tmp/.vpn-creds-$NAME"
           notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
           echo "Disconnected."
           exit 0
@@ -420,18 +420,15 @@ in
 
         notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
 
-        # Create temp credentials file (OpenVPN format: username on line 1, password on line 2)
-        CREDS_FILE=$(mktemp)
-        chmod 600 "$CREDS_FILE"
+        # Create credentials file (persistent so OpenVPN can re-read on reconnect)
+        CREDS_FILE="/tmp/.vpn-creds-$NAME"
         echo "$USER" > "$CREDS_FILE"
         echo "$PASSWORD" >> "$CREDS_FILE"
+        sudo chmod 600 "$CREDS_FILE"
+        sudo chown root:root "$CREDS_FILE"
 
         # Connect in background with credentials file
         sudo openvpn --config "$CONFIG" --auth-user-pass "$CREDS_FILE" --daemon --log /tmp/vpn-$NAME.log
-
-        # Wait a moment then clean up credentials file
-        sleep 2
-        rm -f "$CREDS_FILE"
 
         # Check connection
         sleep 3
@@ -575,11 +572,13 @@ in
         ca /home/${username}/.config/vpn/vpn3/ca.crt
         cert /home/${username}/.config/vpn/vpn3/client.crt
         key /home/${username}/.config/vpn/vpn3/client.key
-        cipher AES-256-GCM
-        auth SHA256
+        cipher AES-256-CBC
+        data-ciphers AES-256-GCM:AES-256-CBC:AES-128-GCM:CHACHA20-POLY1305
+        auth SHA1
         verb 3
         auth-user-pass
-        auth-nocache
+        mssfix 1360
+        pull-filter ignore "block-outside-dns"
       '';
     };
 
@@ -681,6 +680,11 @@ in
   home.packages = with pkgs; [
     # XDG portal for GTK apps (dark mode, file dialogs)
     xdg-desktop-portal-gtk
+
+    # Polkit agent: use badged (fingerprint support) when fprintd is enabled
+    (if osConfig.services.fprintd.enable
+     then pkgs.callPackage ../packages/badged {}
+     else pkgs.hyprpolkitagent)
 
     # Screenshot tools
     grim
@@ -857,6 +861,9 @@ in
     QT_QPA_PLATFORM = "wayland";
     SDL_VIDEODRIVER = "wayland";
     XDG_SESSION_TYPE = "wayland";
+  } // lib.optionalAttrs osConfig.services.fprintd.enable {
+    # Use clean PAM service for Noctalia lock screen (fingerprint hosts only)
+    NOCTALIA_PAM_SERVICE = "noctalia";
   };
 
   # === Battery notification service (laptops) ===
