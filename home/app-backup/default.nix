@@ -1795,12 +1795,22 @@ in
       force = true;
     };
 
-    # Copy example to config on first activation if config doesn't exist
+    # Deploy config from example, re-deploy when example changes (e.g. key rotation)
     home.activation.setupAppBackupConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       CONFIG_DIR="$HOME/.config/app-backup"
-      if [ ! -f "$CONFIG_DIR/config" ] && [ -f "$CONFIG_DIR/config.example" ]; then
-        $DRY_RUN_CMD cp "$CONFIG_DIR/config.example" "$CONFIG_DIR/config"
-        echo "Created ~/.config/app-backup/config from example - please edit with your values"
+      EXAMPLE="$CONFIG_DIR/config.example"
+      CONFIG="$CONFIG_DIR/config"
+      HASH_FILE="$CONFIG_DIR/.deployed-hash"
+      if [ -f "$EXAMPLE" ]; then
+        NEW_HASH=$(sha256sum "$EXAMPLE" | cut -d' ' -f1)
+        OLD_HASH=""
+        [ -f "$HASH_FILE" ] && OLD_HASH=$(cat "$HASH_FILE")
+        if [ ! -f "$CONFIG" ] || [ "$NEW_HASH" != "$OLD_HASH" ]; then
+          $DRY_RUN_CMD cp "$EXAMPLE" "$CONFIG"
+          $DRY_RUN_CMD chmod 600 "$CONFIG"
+          echo "$NEW_HASH" > "$HASH_FILE"
+          echo "Updated ~/.config/app-backup/config from example"
+        fi
       fi
     '';
   };

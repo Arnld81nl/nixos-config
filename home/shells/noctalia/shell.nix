@@ -50,11 +50,14 @@ in
     # Calculate hash of repo configs
     REPO_HASH=$(cat ${settingsJson} ${./gui-settings.json} ${./colors.json} ${./plugins.json} | ${pkgs.coreutils}/bin/sha256sum | cut -d' ' -f1)
 
-    # Check if we should deploy (first run OR repo updated)
+    # Check if we should deploy (first run, hash removed, or repo updated)
     SHOULD_DEPLOY=false
     if [ ! -f "$NOCTALIA_DIR/settings.json" ]; then
       SHOULD_DEPLOY=true
-    elif [ -f "$HASH_FILE" ] && [ "$(cat "$HASH_FILE")" != "$REPO_HASH" ]; then
+    elif [ ! -f "$HASH_FILE" ]; then
+      SHOULD_DEPLOY=true
+      echo "Noctalia: Hash file missing, re-deploying configs..."
+    elif [ "$(cat "$HASH_FILE")" != "$REPO_HASH" ]; then
       SHOULD_DEPLOY=true
       echo "Noctalia: Repo configs updated, syncing..."
     fi
