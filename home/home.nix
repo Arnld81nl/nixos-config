@@ -167,7 +167,6 @@ in
             echo "Disconnecting $NAME VPN..."
             sudo pkill -f "openvpn.*$IP"
             sudo rm -f "/tmp/.vpn-creds-$NAME"
-            notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
             echo "Disconnected."
             exit 0
           fi
@@ -178,13 +177,10 @@ in
           USER=$(op read "op://$OP_ITEM/username" --account "$OP_ACCOUNT" 2>/dev/null)
           PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
           if [ -z "$PASSWORD" ] || [ -z "$USER" ]; then
-            notify-send "VPN $NAME" "Failed to get credentials from 1Password" -i dialog-error
             echo "Error: Could not retrieve credentials from 1Password."
             echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists with username and password fields."
             exit 1
           fi
-
-          notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
 
           # Create credentials file for auth-user-pass (persistent so OpenVPN can re-read on reconnect)
           CREDS_FILE="/tmp/.vpn-creds-$NAME"
@@ -202,10 +198,8 @@ in
           # Wait a moment and check if connected
           sleep 5
           if pgrep -x openvpn > /dev/null 2>&1 && pgrep -fa openvpn | grep -q "$IP"; then
-            notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
             echo "Connected to $NAME VPN."
           else
-            notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
             echo "Connection failed. Check /tmp/vpn-$NAME.log"
             cat /tmp/vpn-$NAME.log
             exit 1
@@ -218,7 +212,6 @@ in
         if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn | grep -q "$IP"; then
           echo "Disconnecting $NAME VPN..."
           sudo pkill -f "openfortivpn.*$IP"
-          notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
           echo "Disconnected."
           exit 0
         fi
@@ -229,13 +222,10 @@ in
         USER=$(op read "op://$OP_ITEM/username" --account "$OP_ACCOUNT" 2>/dev/null)
         PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
         if [ -z "$PASSWORD" ] || [ -z "$USER" ]; then
-          notify-send "VPN $NAME" "Failed to get credentials from 1Password" -i dialog-error
           echo "Error: Could not retrieve credentials from 1Password."
           echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists with username and password fields."
           exit 1
         fi
-
-        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
 
         # Connect in background, redirect output to log
         sudo openfortivpn "$HOST" -u "$USER" -p "$PASSWORD" ''${TRUSTED_CERT:+--trusted-cert "$TRUSTED_CERT"} > /tmp/vpn-$NAME.log 2>&1 &
@@ -243,10 +233,8 @@ in
         # Wait a moment and check if connected
         sleep 3
         if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn | grep -q "$IP"; then
-          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
           echo "Connected to $NAME VPN."
         else
-          notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
           echo "Connection failed. Check /tmp/vpn-$NAME.log"
           cat /tmp/vpn-$NAME.log
           exit 1
@@ -396,7 +384,6 @@ in
           echo "Disconnecting $NAME VPN..."
           sudo pkill -f "openvpn.*vpn3"
           sudo rm -f "/tmp/.vpn-creds-$NAME"
-          notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
           echo "Disconnected."
           exit 0
         fi
@@ -412,13 +399,10 @@ in
         USER=$(op read "op://$OP_ITEM/username" --account "$OP_ACCOUNT" 2>/dev/null)
         PASSWORD=$(op read "op://$OP_ITEM/password" --account "$OP_ACCOUNT" 2>/dev/null)
         if [ -z "$PASSWORD" ] || [ -z "$USER" ]; then
-          notify-send "VPN $NAME" "Failed to get credentials from 1Password" -i dialog-error
           echo "Error: Could not retrieve credentials from 1Password."
           echo "Make sure 1Password is unlocked and item '$OP_ITEM' exists with username and password fields."
           exit 1
         fi
-
-        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
 
         # Create credentials file (persistent so OpenVPN can re-read on reconnect)
         CREDS_FILE="/tmp/.vpn-creds-$NAME"
@@ -433,10 +417,8 @@ in
         # Check connection
         sleep 3
         if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
-          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
           echo "Connected to $NAME VPN."
         else
-          notify-send "VPN $NAME" "Connection failed - check log" -i dialog-error
           echo "Connection failed. Check /tmp/vpn-$NAME.log"
           cat /tmp/vpn-$NAME.log
           exit 1
@@ -463,7 +445,6 @@ in
         if ip link show "$INTERFACE" > /dev/null 2>&1; then
           echo "Disconnecting $NAME VPN..."
           sudo wg-quick down "$CONFIG"
-          notify-send "VPN $NAME" "Disconnected" -i network-vpn-symbolic
           echo "Disconnected."
           exit 0
         fi
@@ -475,17 +456,14 @@ in
         fi
 
         echo "Connecting to $NAME VPN..."
-        notify-send "VPN $NAME" "Connecting..." -i network-vpn-acquiring-symbolic
 
         sudo wg-quick up "$CONFIG"
 
         # Check connection
         sleep 2
         if ip link show "$INTERFACE" > /dev/null 2>&1; then
-          notify-send "VPN $NAME" "Connected" -i network-vpn-symbolic
           echo "Connected to $NAME VPN."
         else
-          notify-send "VPN $NAME" "Connection failed" -i dialog-error
           echo "Connection failed."
           exit 1
         fi
@@ -711,7 +689,7 @@ in
     openfortivpn-webview-qt  # SAML/SSO authentication helper
     openvpn                  # OpenVPN client
     wireguard-tools          # WireGuard VPN client
-    libnotify        # notify-send for VPN toggle notifications
+    libnotify
     spotify
     lazydocker
     btop
