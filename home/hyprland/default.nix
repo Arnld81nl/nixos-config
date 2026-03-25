@@ -13,8 +13,9 @@ let
   bindingsNoctalia = import ./bindings.nix { shell = "noctalia"; };
   bindingsIllogical = import ./bindings.nix { shell = "illogical"; };
   # Generate autostart for all shells (each specialisation sources its own)
-  autostartNoctalia = import ./autostart.nix { shell = "noctalia"; };
-  autostartIllogical = import ./autostart.nix { shell = "illogical"; };
+  hasFprintd = osConfig.services.fprintd.enable;
+  autostartNoctalia = import ./autostart.nix { shell = "noctalia"; inherit hasFprintd; };
+  autostartIllogical = import ./autostart.nix { shell = "illogical"; inherit hasFprintd; };
 
   # Shell-specific Hyprland configuration
   # CLEAN APPROACH: Use our ENTIRE Hyprland config for both shells

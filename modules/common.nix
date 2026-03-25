@@ -33,7 +33,7 @@
     options = "--delete-older-than 14d";
   };
 
-  # Optimize store automatically
+  # Optimize store automatically (deduplicates via hard-linking)
   nix.settings.auto-optimise-store = true;
 
   # Parallel builds for faster compilation
@@ -69,6 +69,10 @@
       xorg.libXi
     ];
   };
+
+  # Make nix-ld libraries available to dlopen (for NixOS-compiled binaries
+  # that load shared libs at runtime, e.g. ONNX runtime via fastembed)
+  environment.sessionVariables.LD_LIBRARY_PATH = [ "/run/current-system/sw/share/nix-ld/lib" ];
 
   # Networking
   networking.networkmanager = {
@@ -147,6 +151,9 @@
     memoryPercent = 25;
   };
 
+  # Firmware updates via LVFS (BIOS, EC, etc.)
+  services.fwupd.enable = true;
+
   # SSD TRIM
   services.fstrim.enable = true;
 
@@ -157,6 +164,14 @@
   virtualisation.docker = {
     enable = true;
     enableOnBoot = true;
+  };
+
+  # GPU Screen Recorder needs cap_sys_admin for KMS access
+  security.wrappers.gsr-kms-server = {
+    owner = "root";
+    group = "root";
+    capabilities = "cap_sys_admin+ep";
+    source = "${pkgs.gpu-screen-recorder}/bin/gsr-kms-server";
   };
 
   # Audio (PipeWire)
@@ -183,6 +198,9 @@
   # Enable Fish system-wide (required for login shell)
   programs.fish.enable = true;
 
+  # Enable dconf (required for GTK apps to read dark mode preference)
+  programs.dconf.enable = true;
+
   # Programs and packages
   services.printing.enable = true;
   programs.firefox = {
@@ -206,11 +224,15 @@
     polkitPolicyOwners = [ username ];
   };
 
-  # Google Chrome extension policies (force-install 1Password)
+  # Google Chrome managed policies
   environment.etc."opt/chrome/policies/managed/extensions.json".text = builtins.toJSON {
     ExtensionInstallForcelist = [
       "aeblfdkhhhdcdjpifhhbdiojplfjncoa;https://clients2.google.com/service/update2/crx"
     ];
+  };
+  environment.etc."opt/chrome/policies/managed/session.json".text = builtins.toJSON {
+    # 1 = Restore the last session (suppresses the crash restore dialog)
+    RestoreOnStartup = 1;
   };
 
   environment.systemPackages = with pkgs; [
@@ -247,8 +269,10 @@
     source = "${config.security.polkit.package.out}/lib/polkit-1/polkit-agent-helper-1";
   };
 
-  # Kernel hardening
+  # Kernel tuning and hardening
   boot.kernel.sysctl = {
+    # Reduce swap eagerness (default 60 is too aggressive for workstations with plenty of RAM)
+    "vm.swappiness" = 10;
     # Restrict kernel pointer exposure
     "kernel.kptr_restrict" = 2;
     # Restrict dmesg access to root
@@ -273,8 +297,8 @@
 
   # I/O scheduler tuning for NVMe (use none/mq-deadline for best performance)
   services.udev.extraRules = ''
-    # NVMe drives - use none scheduler (lowest latency)
-    ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/scheduler}="none"
+    # NVMe namespaces - use none scheduler (lowest latency)
+    ACTION=="add|change", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="none"
     # SATA SSDs - use mq-deadline
     ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="mq-deadline"
 
@@ -282,6 +306,9 @@
     # This is safe because IOMMU provides hardware-level DMA attack protection
     ACTION=="add", SUBSYSTEM=="thunderbolt", ATTRS{iommu_dma_protection}=="1", ATTR{authorized}=="0", ATTR{authorized}="1"
   '';
+
+  # CPU frequency scaling - schedutil adapts to scheduler load
+  boot.kernelParams = [ "cpufreq.default_governor=schedutil" ];
 
   # System state version
   system.stateVersion = "24.11";

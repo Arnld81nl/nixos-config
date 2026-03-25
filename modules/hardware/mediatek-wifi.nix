@@ -15,8 +15,9 @@
   # Load driver explicitly - udev auto-loading can be unreliable
   boot.kernelModules = [ "mt7925e" ];
 
-  # Give Linux ASPM control so the mt7925e driver can disable it per-device
-  boot.kernelParams = [ "pcie_aspm=force" ];
+  # Note: Do NOT use pcie_aspm=force here — it affects ALL PCIe devices system-wide
+  # (NVMe, GPU, etc.) and can cause issues. The driver's own disable_aspm=1 option
+  # is more targeted and sufficient.
 
   # Disable ASPM in driver for stable suspend/resume
   # Disable CLC to prevent random disconnects (known bug, fixed in kernel 6.19)

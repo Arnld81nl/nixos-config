@@ -11,20 +11,26 @@
 
   networking.hostName = "G1a";
 
-  # Fan spin-ups at "idle" are usually caused by brief CPU boost bursts that cross the
-  # EC's fan threshold. On this machine, the default PPD "balanced" profile maps to
-  # EPP=balance_performance, which is quite eager to boost.
+  # Disable power-profiles-daemon — broken on Strix Halo with amd-pstate-epp
+  # (fails writing policy*/boost, sticks to power-saver incorrectly).
+  # Use direct sysfs writes instead.
+  services.power-profiles-daemon.enable = lib.mkForce false;
+
+  # Keep this laptop on "balanced" platform profile always.
   #
-  # Policy:
-  # - On AC: keep platform_profile=balanced, but set EPP=balance_power (quieter idle).
-  # - On battery: set power-saver + EPP=power and disable CPU boost.
+  # powerprofilesctl currently fails on this host when it tries to toggle AMD boost,
+  # so we apply the durable bits directly through sysfs instead:
+  # - always keep the platform profile on "balanced"
+  # - on AC: prefer snappier boosting with EPP=balance_performance
+  # - on battery: stay efficient with EPP=balance_power, but do not drop to power-saver
   #
   # This runs at boot and whenever AC online status changes.
   systemd.services.g1a-power-policy = {
-    description = "G1a power policy (PPD + AMD P-State EPP + boost)";
-    after = [ "power-profiles-daemon.service" ];
-    wants = [ "power-profiles-daemon.service" ];
-    wantedBy = [ "multi-user.target" ];
+    description = "G1a power policy (platform profile + AMD P-State EPP)";
+    # Use graphical.target (not multi-user.target) to avoid a systemd ordering cycle:
+    # multi-user.target → g1a-power-policy → PPD → After=multi-user.target → cycle!
+    # graphical.target comes after multi-user.target, breaking the cycle.
+    wantedBy = [ "graphical.target" ];
 
     serviceConfig = {
       Type = "oneshot";
@@ -39,25 +45,23 @@
       fi
 
       if [ "$ac_online" = "1" ]; then
-        # Keep platform_profile balanced, but dial back boost eagerness.
-        ${pkgs.power-profiles-daemon}/bin/powerprofilesctl set balanced || true
+        # AC: balanced platform profile, snappier EPP
+        if [ -w /sys/firmware/acpi/platform_profile ]; then
+          echo balanced > /sys/firmware/acpi/platform_profile || true
+        fi
+        for p in /sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference; do
+          [ -w "$p" ] || continue
+          echo balance_performance > "$p" || true
+        done
+      else
+        # Battery: balanced platform profile, efficient EPP
+        if [ -w /sys/firmware/acpi/platform_profile ]; then
+          echo balanced > /sys/firmware/acpi/platform_profile || true
+        fi
         for p in /sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference; do
           [ -w "$p" ] || continue
           echo balance_power > "$p" || true
         done
-        if [ -w /sys/devices/system/cpu/cpufreq/boost ]; then
-          echo 1 > /sys/devices/system/cpu/cpufreq/boost || true
-        fi
-      else
-        # Battery: prioritize quietness and efficiency.
-        ${pkgs.power-profiles-daemon}/bin/powerprofilesctl set power-saver || true
-        for p in /sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference; do
-          [ -w "$p" ] || continue
-          echo power > "$p" || true
-        done
-        if [ -w /sys/devices/system/cpu/cpufreq/boost ]; then
-          echo 0 > /sys/devices/system/cpu/cpufreq/boost || true
-        fi
       fi
     '';
   };
@@ -78,11 +82,30 @@
   # Fingerprint reader (Synaptics FS7606, power button)
   services.fprintd.enable = true;
 
+  # PAM fingerprint authentication
+  # NOTE: greetd and login are NOT enabled — auto-login makes them unnecessary
+  # and they can cause PAM timeouts.
+  security.pam.services = {
+    sudo.fprintAuth = true;           # Sudo commands
+    polkit-1.fprintAuth = true;       # Polkit prompts (1Password, etc.)
+    hyprlock.fprintAuth = true;       # Screen lock (Illogical shell)
+    noctalia.fprintAuth = true;       # Screen lock (Noctalia shell)
+  };
+
   # Fingerprint reader suspend/resume: force USB reset on resume for this device
   # Without this, the device fails to resume from s2idle (kernel error -107,
   # endpoint stalled) and fprintd can't communicate with it.
   # The 'b' flag sets USB_QUIRK_RESET_RESUME for this specific device.
+  # Display stability workarounds for this Strix Halo laptop:
+  # - amd_pstate=active: AMD P-State driver with autonomous mode for best efficiency
+  # - dcdebugmask=0x410: disable Panel Replay and PSR to prevent flip_done stalls
+  # - sg_display=0: disable scatter/gather display to prevent external monitor corruption
+  # - gfxoff=0: mitigate GPU hangs under heavy Wayland/Chromium GPU load
   boot.kernelParams = lib.mkAfter [
+    "amd_pstate=active"
+    "amdgpu.dcdebugmask=0x410"
+    "amdgpu.sg_display=0"
+    "amdgpu.gfxoff=0"
     "usbcore.quirks=06cb:0106:b"
   ];
 

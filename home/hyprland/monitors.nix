@@ -5,9 +5,18 @@
 let
   # Check base hostname (handles -illogical suffix)
   isKraken = lib.hasPrefix "kraken" hostname;
+  isG1a = lib.hasPrefix "G1a" hostname;
   isX1yoga = lib.hasPrefix "x1yoga" hostname;
   isXps9320 = lib.hasPrefix "xps9320" hostname;
-  monitorConfig = if isKraken then ''
+  monitorConfig = if isG1a then ''
+    # G1a: Built-in 2880x1800 at 2x
+    monitor = eDP-1,preferred,0x0,2
+    # External LG 4K monitor at 1.33x, positioned to the right
+    monitor = desc:LG Electronics LG HDR 4K,preferred,1440x0,1.33
+    # Fallback for other external monitors
+    monitor = ,preferred,auto,1.33
+    env = GDK_SCALE,2
+  '' else if isKraken then ''
     # Kraken: 4K display at 165Hz with 1.5x scaling
     monitor = ,3840x2160@165,auto,1.5
     env = GDK_SCALE,1.5

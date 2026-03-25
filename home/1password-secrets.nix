@@ -1,7 +1,8 @@
 # 1Password SSH Agent Integration
 #
-# This module configures SSH to use 1Password's SSH agent, making SSH keys
-# stored in 1Password available after a single unlock.
+# This module configures SSH to try local key files first, then fall back
+# to the 1Password SSH agent if available. SSH works even when 1Password
+# is locked (using local keys).
 #
 # === MANUAL ONE-TIME SETUP REQUIRED ===
 #
@@ -16,22 +17,17 @@
 { config, pkgs, lib, ... }:
 
 {
-  # Point SSH_AUTH_SOCK to 1Password's agent socket
-  home.sessionVariables = {
-    SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
-  };
-
   # SSH client configuration
-  # Note: enableDefaultConfig = false is recommended by Home Manager (defaults are being deprecated)
-  # We explicitly set the defaults we want in matchBlocks and extraConfig
+  # Uses local key files first, 1Password agent as conditional fallback.
+  # This means SSH works even when 1Password is locked.
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
     matchBlocks = {
       "*" = {
-        # Try local key first, then fall back to 1Password agent
+        # Try local key first (no agent needed)
         identityFile = "~/.ssh/id_ed25519";
-        identityAgent = "~/.1password/agent.sock";
+        extraOptions.IdentitiesOnly = "yes";
       };
       # GitHub SSH over HTTPS (port 443) - bypasses firewalls blocking port 22
       "github.com" = {
@@ -41,11 +37,14 @@
       };
     };
     extraConfig = ''
-      # Security defaults (previously provided by Home Manager)
+      # Security defaults
       StrictHostKeyChecking accept-new
       HashKnownHosts yes
-      # Auto-add keys to agent on first use
-      AddKeysToAgent yes
+
+      # Fallback to 1Password SSH agent when the socket exists
+      # This allows SSH to work without 1Password being unlocked
+      Match host * exec "test -S %d/.1password/agent.sock"
+        IdentityAgent ~/.1password/agent.sock
     '';
   };
 

@@ -591,6 +591,29 @@ in
     categories = [ "Office" "Security" ];
   };
 
+  # Neovim wrapper that launches in Ghostty terminal
+  xdg.desktopEntries.nvim-ghostty = {
+    name = "Neovim";
+    exec = "ghostty -e nvim %F";
+    icon = "nvim";
+    comment = "Edit text files in Neovim";
+    categories = [ "Utility" "TextEditor" ];
+    mimeType = [
+      "text/plain"
+      "text/x-csrc"
+      "text/x-chdr"
+      "text/x-c++src"
+      "text/x-c++hdr"
+      "text/x-java"
+      "text/x-python"
+      "text/x-shellscript"
+      "application/json"
+      "application/x-yaml"
+      "application/xml"
+      "text/markdown"
+    ];
+  };
+
   xdg.desktopEntries.onlyoffice-desktopeditors = {
     name = "OnlyOffice Desktop Editors";
     exec = "onlyoffice-desktopeditors --enable-features=UseOzonePlatform,WaylandWindowDecorations --ozone-platform=wayland %U";
@@ -664,17 +687,22 @@ in
      then pkgs.callPackage ../packages/badged {}
      else pkgs.hyprpolkitagent)
 
-    # Screenshot tools
+    # Screenshot & screen recording tools
     grim
     slurp
     satty
     wayfreeze
     wl-clipboard
     hyprpicker
+    gpu-screen-recorder
+    gpu-screen-recorder-gtk
 
     # File management
     nautilus
     sushi # Quick preview for Nautilus (press SPACE)
+    file-roller           # archive manager (Nautilus integration)
+    ffmpegthumbnailer     # video thumbnails in Nautilus
+    webp-pixbuf-loader    # WebP image support in GTK apps
 
     # Theming
     nwg-look
@@ -705,6 +733,11 @@ in
 
     # CLI enhancements
     bat              # cat with syntax highlighting
+    eza              # modern ls with colors/icons
+    delta            # better git diffs
+    tree             # directory tree viewer
+    duf              # modern df replacement
+    nix-tree         # visualize nix store dependencies
 
     # Media
     mpv              # video player
@@ -728,7 +761,14 @@ in
   ];
 
   # Web browsers
-  programs.google-chrome.enable = true;
+  programs.google-chrome = {
+    enable = true;
+    commandLineArgs = [
+      "--enable-features=TouchpadOverscrollHistoryNavigation"
+      "--disable-features=VaapiVideoDecodeLinuxGL,VaapiVideoEncoder"
+      "--hide-crash-restore-bubble"
+    ];
+  };
 
   programs.firefox.enable = true;
 
@@ -831,9 +871,6 @@ in
     BROWSER = "google-chrome-stable";
     TERMINAL = "ghostty";
 
-    # 1Password SSH agent (ensures consistent use across all tools)
-    SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
-
     # Wayland-specific (NIXOS_OZONE_WL is set in configuration.nix)
     MOZ_ENABLE_WAYLAND = "1";
     QT_QPA_PLATFORM = "wayland";
@@ -841,7 +878,7 @@ in
     XDG_SESSION_TYPE = "wayland";
   } // lib.optionalAttrs osConfig.services.fprintd.enable {
     # Use clean PAM service for Noctalia lock screen (fingerprint hosts only)
-    NOCTALIA_PAM_SERVICE = "noctalia";
+    NOCTALIA_PAM_CONFIG = "noctalia";
   };
 
   # === Battery notification service (laptops) ===

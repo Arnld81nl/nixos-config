@@ -8,6 +8,9 @@
 { config, pkgs, lib, inputs, hostname, ... }:
 
 let
+  # Noctalia package with QtWebSockets support (needed for Claw plugin)
+  noctaliaPackage = inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
   # Load base settings from JSON
   baseSettings = builtins.fromJSON (builtins.readFile ./settings.json);
 
@@ -33,6 +36,11 @@ in
   # The module is loaded via conditional import in home/home.nix
   programs.noctalia-shell = {
     enable = true;
+
+    # Add QtWebSockets support for Claw plugin
+    package = noctaliaPackage.overrideAttrs (old: {
+      buildInputs = (old.buildInputs or []) ++ [ pkgs.qt6.qtwebsockets ];
+    });
 
     # Disable automatic systemd service - we control startup via Hyprland autostart
     systemd.enable = false;
@@ -70,6 +78,22 @@ in
       chmod 644 "$NOCTALIA_DIR"/*.json
       echo "$REPO_HASH" > "$HASH_FILE"
     fi
+  '';
+
+  # Ensure Noctalia's Hyprland colors file is writable (not a symlink)
+  # Noctalia generates this via template processing at runtime
+  home.activation.noctaliaHyprColorsWritable = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    dir="$HOME/.config/hypr/noctalia"
+    file="$dir/noctalia-colors.conf"
+    mkdir -p "$dir"
+
+    # If something (e.g. Home Manager) created a symlink here, replace it
+    if [ -L "$file" ]; then
+      rm -f "$file"
+    fi
+
+    touch "$file"
+    chmod 0644 "$file"
   '';
 
   # Noctalia-specific packages

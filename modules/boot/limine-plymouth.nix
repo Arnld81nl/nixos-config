@@ -58,6 +58,9 @@
     "quiet"
     "splash"
     "rd.udev.log_level=3"
+    "udev.log_priority=3"             # Suppress stage-2 udev messages
+    "rd.systemd.show_status=auto"     # Hide initrd systemd status unless error
+    "systemd.show_status=auto"        # Hide stage-2 systemd status unless error
     "vt.global_cursor_default=0"
   ];
   boot.consoleLogLevel = 1;  # Allow critical errors through for debugging

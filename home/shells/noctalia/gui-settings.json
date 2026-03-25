@@ -385,7 +385,7 @@
         "audioCodec": "opus",
         "audioSource": "default_output",
         "colorRange": "limited",
-        "directory": "/home/john/Videos",
+        "directory": "/home/arnold/Videos",
         "frameRate": 60,
         "quality": "very_high",
         "showCursor": true,

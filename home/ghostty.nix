@@ -1,5 +1,5 @@
 # Ghostty terminal configuration
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   noctaliaTheme = ''
@@ -54,6 +54,9 @@ in
       # Mouse
       mouse-scroll-multiplier = 0.95;
 
+      # Use epoll instead of io_uring to avoid false iowait accounting
+      async-backend = "epoll";
+
       # Theme
       theme = "noctalia";
 
@@ -73,9 +76,24 @@ in
     # themes.noctalia = { ... };
   };
 
-  # Manage theme file directly with force to prevent backup conflicts
-  xdg.configFile."ghostty/themes/noctalia" = {
-    text = noctaliaTheme;
-    force = true;
-  };
+  # Seed theme file as a regular (writable) file so Noctalia can update it at runtime.
+  # Only writes if the file doesn't exist yet — local changes persist across rebuilds.
+  home.activation.ghosttyNoctaliaTheme = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    dir="$HOME/.config/ghostty/themes"
+    file="$dir/noctalia"
+    mkdir -p "$dir"
+
+    # If Home Manager left a symlink, replace it with a regular file
+    if [ -L "$file" ]; then
+      rm -f "$file"
+    fi
+
+    # Only seed if missing — preserve local/Noctalia edits
+    if [ ! -f "$file" ]; then
+      cat > "$file" << 'THEME'
+    ${noctaliaTheme}
+    THEME
+      chmod 0644 "$file"
+    fi
+  '';
 }

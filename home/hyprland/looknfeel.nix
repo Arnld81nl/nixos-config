@@ -75,10 +75,16 @@ in
 
 ${dwindleConfig}
 ${masterConfig}
+  # Cursor settings
+  cursor {
+    no_hardware_cursors = true  # Software cursors prevent lag spikes on NVIDIA/hybrid
+  }
+
   # Misc settings
   misc {
     force_default_wallpaper = 0
     disable_hyprland_logo = true
+    focus_on_activate = false  # Prevent windows from stealing focus on activation
   }
 
   # XWayland scaling - let Hyprland handle scaling for X11 apps
@@ -121,4 +127,7 @@ ${masterConfig}
 
   # No transparency on media windows
   windowrule = match:class (vlc|mpv|imv|zoom), opacity 1 1
+
+  # Chrome notification popups - float, don't steal focus, visible on all workspaces
+  windowrule = match:class google-chrome, match:title ^Notification.*, float on, no_initial_focus on, pin on
 ''
