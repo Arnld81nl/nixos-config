@@ -131,7 +131,7 @@
                     "icon": "",
                     "id": "CustomButton",
                     "ipcIdentifier": "",
-                    "leftClickExec": "hyprctl dispatch exec 'bash /home/arnold/.local/bin/vpn-2'",
+                    "leftClickExec": "hyprctl dispatch exec 'bash /home/USER/.local/bin/vpn-2'",
                     "leftClickUpdateText": true,
                     "maxTextLength": {
                         "horizontal": 8,
@@ -162,7 +162,7 @@
                     "icon": "",
                     "id": "CustomButton",
                     "ipcIdentifier": "",
-                    "leftClickExec": "hyprctl dispatch exec 'bash /home/arnold/.local/bin/vpn-1'",
+                    "leftClickExec": "hyprctl dispatch exec 'bash /home/USER/.local/bin/vpn-1'",
                     "leftClickUpdateText": true,
                     "maxTextLength": {
                         "horizontal": 8,
@@ -193,7 +193,7 @@
                     "icon": "",
                     "id": "CustomButton",
                     "ipcIdentifier": "",
-                    "leftClickExec": "hyprctl dispatch exec 'bash /home/arnold/.local/bin/vpn-3'",
+                    "leftClickExec": "hyprctl dispatch exec 'bash /home/USER/.local/bin/vpn-3'",
                     "leftClickUpdateText": true,
                     "maxTextLength": {
                         "horizontal": 10,
@@ -390,7 +390,7 @@
         "allowPanelsOnScreenWithoutBar": true,
         "animationDisabled": false,
         "animationSpeed": 1,
-        "avatarImage": "/home/arnold/nixos-config/download.png",
+        "avatarImage": "/home/USER/.face",
         "boxRadiusRatio": 1,
         "compactLockScreen": false,
         "dimmerOpacity": 0.2,
@@ -602,7 +602,7 @@
     },
     "wallpaper": {
         "automationEnabled": false,
-        "directory": "/home/arnold/Pictures/Wallpapers",
+        "directory": "/home/USER/Pictures/Wallpapers",
         "enableMultiMonitorDirectories": false,
         "enabled": true,
         "fillColor": "#000000",

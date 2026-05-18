@@ -5,21 +5,43 @@
 # - GUI changes persist locally across rebuilds
 # - When repo configs are updated (hash changes), local files are overwritten
 # - To sync local changes back to repo, ask Claude to copy the files
-{ config, pkgs, lib, inputs, hostname, ... }:
+{ config, pkgs, lib, inputs, hostname, username, osConfig ? null, ... }:
 
 let
   # Noctalia package with QtWebSockets support (needed for Claw plugin)
   noctaliaPackage = inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
+  # Keep repo JSON public-safe by using /home/USER placeholders, then render
+  # the actual user home path at activation time.
+  homePath = "/home/${username}";
+  homePathPlaceholders = [ "/home/USER" ];
+  renderedHomePaths = [ homePath ];
+
   # Load base settings from JSON
-  baseSettings = builtins.fromJSON (builtins.readFile ./settings.json);
+  baseSettings = builtins.fromJSON (
+    builtins.replaceStrings homePathPlaceholders renderedHomePaths
+      (builtins.readFile ./settings.json)
+  );
+  guiSettingsJson = pkgs.writeText "noctalia-gui-settings.json" (
+    builtins.replaceStrings homePathPlaceholders renderedHomePaths
+      (builtins.readFile ./gui-settings.json)
+  );
 
   # Filter out Battery widget for hosts without a battery (desktop PCs)
   hostsWithoutBattery = [ "kraken" ];
   hasBattery = !builtins.any (host: lib.hasPrefix host hostname) hostsWithoutBattery;
 
+  # Wire fingerprint auth into Noctalia's lock screen when fprintd is enabled.
+  hasFingerprintAuth =
+    if osConfig == null then false else osConfig.services.fprintd.enable or false;
+
   # Generate host-specific settings
   settings = baseSettings // {
+    general = baseSettings.general // {
+      autoStartAuth = hasFingerprintAuth;
+      allowPasswordWithFprintd = hasFingerprintAuth;
+    };
+
     bar = baseSettings.bar // {
       widgets = baseSettings.bar.widgets // {
         right = builtins.filter
@@ -56,7 +78,7 @@ in
     mkdir -p "$NOCTALIA_DIR"
 
     # Calculate hash of repo configs
-    REPO_HASH=$(cat ${settingsJson} ${./gui-settings.json} ${./colors.json} ${./plugins.json} | ${pkgs.coreutils}/bin/sha256sum | cut -d' ' -f1)
+    REPO_HASH=$(cat ${settingsJson} ${guiSettingsJson} ${./colors.json} ${./plugins.json} | ${pkgs.coreutils}/bin/sha256sum | cut -d' ' -f1)
 
     # Check if we should deploy (first run, hash removed, or repo updated)
     SHOULD_DEPLOY=false
@@ -72,7 +94,7 @@ in
 
     if [ "$SHOULD_DEPLOY" = true ]; then
       cp ${settingsJson} "$NOCTALIA_DIR/settings.json"
-      cp ${./gui-settings.json} "$NOCTALIA_DIR/gui-settings.json"
+      cp ${guiSettingsJson} "$NOCTALIA_DIR/gui-settings.json"
       cp ${./colors.json} "$NOCTALIA_DIR/colors.json"
       cp ${./plugins.json} "$NOCTALIA_DIR/plugins.json"
       chmod 644 "$NOCTALIA_DIR"/*.json

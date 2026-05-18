@@ -436,7 +436,7 @@ let
         local count=0
 
         # Add secrets.nix (contains VPN certs, IPs, 1Password paths)
-        local secrets_path="/home/arnold/nixos-config/home/secrets.nix"
+        local secrets_path="${config.home.homeDirectory}/nixos-config/home/secrets.nix"
         if [[ -f "$secrets_path" ]]; then
           cp "$secrets_path" "$staging_dir/configs/secrets.nix"
           ((count++)) || true
@@ -1042,7 +1042,7 @@ let
 
         # Restore secrets.nix
         if [[ -f "$extract_dir/configs/secrets.nix" ]]; then
-          local secrets_path="/home/arnold/nixos-config/home/secrets.nix"
+          local secrets_path="${config.home.homeDirectory}/nixos-config/home/secrets.nix"
           if [[ -f "$secrets_path" && "$FORCE" != "true" ]]; then
             log_info "secrets.nix already exists - skipping (use --force to overwrite)"
           else
@@ -1665,12 +1665,12 @@ in
       description = ''
         1Password secret reference for the age private key.
         Format: op://vault/item/field
-        Example: op://Private/age-key/private-key
+        Example: op://VAULT/age-key/private-key
 
         When set, the key is retrieved from 1Password on-the-fly.
         This takes precedence over ageKeyPath.
       '';
-      example = "op://Private/age-key/private-key";
+      example = "op://VAULT/age-key/private-key";
     };
 
     ageKeyPath = mkOption {
@@ -1689,9 +1689,9 @@ in
       description = ''
         1Password secret reference for the SSH private key.
         Format: op://vault/item/field
-        Example: op://Private/SSH Key (Kraken)/private key
+        Example: op://VAULT/SSH Key/private key
       '';
-      example = "op://Private/SSH Key (Kraken)/private key";
+      example = "op://VAULT/SSH Key/private key";
     };
 
     sshKeyPath = mkOption {
@@ -1711,7 +1711,7 @@ in
         1Password reference for the passphrase to encrypt/decrypt keys backup.
         If not set, will prompt interactively during backup/restore.
       '';
-      example = "op://Private/keys-backup-passphrase/password";
+      example = "op://VAULT/keys-backup-passphrase/password";
     };
 
     localRepoPath = mkOption {

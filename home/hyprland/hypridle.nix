@@ -47,7 +47,7 @@ in
     general {
       lock_cmd = ${lockCmd}
       before_sleep_cmd = ${lockCmd}
-      after_sleep_cmd = ${lockCmd}; hyprctl dispatch dpms on
+      after_sleep_cmd = hyprctl dispatch dpms on
     }
 
     listener {

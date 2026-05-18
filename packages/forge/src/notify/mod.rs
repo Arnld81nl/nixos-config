@@ -2,7 +2,7 @@
 //!
 //! Checks for:
 //! - NixOS config repo updates (changes from other machines)
-//! - App profile updates (private-settings repo)
+//! - App profile updates (encrypted backup repo)
 //! - Flake input updates (nixpkgs, home-manager, etc.)
 
 pub mod checks;

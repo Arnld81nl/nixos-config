@@ -14,8 +14,14 @@
 #
 # The SSH agent socket will be available at ~/.1password/agent.sock
 #
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, username, ... }:
 
+let
+  # Private SSH hosts belong in gitignored home/secrets.nix.
+  secretsPath = "/home/${username}/nixos-config/home/secrets.nix";
+  secrets = if builtins.pathExists secretsPath then import secretsPath else {};
+  privateSshMatchBlocks = secrets.ssh.matchBlocks or {};
+in
 {
   # SSH client configuration
   # Uses local key files first, 1Password agent as conditional fallback.
@@ -35,7 +41,7 @@
         port = 443;
         user = "git";
       };
-    };
+    } // privateSshMatchBlocks;
     extraConfig = ''
       # Security defaults
       StrictHostKeyChecking accept-new

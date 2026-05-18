@@ -292,7 +292,7 @@
         "allowPanelsOnScreenWithoutBar": true,
         "animationDisabled": false,
         "animationSpeed": 1,
-        "avatarImage": "/home/john/.face",
+        "avatarImage": "/home/USER/.face",
         "boxRadiusRatio": 1,
         "compactLockScreen": false,
         "dimmerOpacity": 0.2,
@@ -385,7 +385,7 @@
         "audioCodec": "opus",
         "audioSource": "default_output",
         "colorRange": "limited",
-        "directory": "/home/arnold/Videos",
+        "directory": "/home/USER/Videos",
         "frameRate": 60,
         "quality": "very_high",
         "showCursor": true,
@@ -484,7 +484,7 @@
         "tooltipsEnabled": true
     },
     "wallpaper": {
-        "directory": "/home/john/Pictures/Wallpapers",
+        "directory": "/home/USER/Pictures/Wallpapers",
         "enableMultiMonitorDirectories": false,
         "enabled": true,
         "fillColor": "#000000",

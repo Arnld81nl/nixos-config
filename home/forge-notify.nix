@@ -2,7 +2,7 @@
 #
 # Systemd user service and timer that checks for:
 # - NixOS config repo updates (changes from other machines)
-# - App profile updates (private-settings repo)
+# - App profile updates (encrypted backup repo)
 # - Flake input updates (nixpkgs, home-manager, etc.)
 #
 # Sends desktop notifications via libnotify when updates are available.

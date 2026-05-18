@@ -22,14 +22,14 @@
   services.dbus.packages = [ pkgs.microsoft-identity-broker ];
 
   # System service for device broker
+  # NOTE: Must run as root — the upstream D-Bus policy only grants bus name
+  # ownership to root (com.microsoft.identity.devicebroker1).
   systemd.services.microsoft-identity-device-broker = {
     description = "Microsoft Identity Device Broker Service";
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "dbus";
       BusName = "com.microsoft.identity.devicebroker1";
-      User = "microsoft-identity-broker";
-      Group = "microsoft-identity-broker";
       RuntimeDirectory = "microsoft-identity-device-broker";
       StateDirectory = "microsoft-identity-device-broker";
       LogsDirectory = "microsoft-identity-device-broker";

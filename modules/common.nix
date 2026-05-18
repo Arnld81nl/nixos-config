@@ -1,6 +1,28 @@
 # Common NixOS configuration shared across all machines
 { config, pkgs, lib, forge, username, ... }:
 
+let
+  # Load secrets (same pattern as home/home.nix)
+  secretsPath = "/home/${username}/nixos-config/home/secrets.nix";
+  hasSecrets = builtins.pathExists secretsPath;
+  secrets = if hasSecrets then import secretsPath else {};
+  eduroamIdentity = secrets.eduroam.identity or "user@example.edu";
+  eduroamAnonymousIdentity = secrets.eduroam.anonymousIdentity or "anonymous@example.edu";
+  eduroamPassword = secrets.eduroam.password or "placeholder";
+
+  # Mic-mute LED: kernel default rule leaves brightness writable only by root,
+  # which prevents WirePlumber's user service from syncing it. Hand ownership
+  # to the active user with 0660 instead of the chmod 666 we used before.
+  hostsWithMicMuteLed = [ "G1a" ];
+  micMuteLedPermissions = pkgs.writeShellScript "mic-mute-led-permissions" ''
+    set -eu
+    brightness="$1"
+
+    [ -e "$brightness" ] || exit 0
+    ${pkgs.coreutils}/bin/chown ${username}:users "$brightness" || exit 0
+    ${pkgs.coreutils}/bin/chmod 0660 "$brightness" || exit 0
+  '';
+in
 {
   imports = [
     ./gaming.nix      # Steam and gaming tools
@@ -63,10 +85,10 @@
       wayland
       fontconfig
       libdrm
-      xorg.libX11
-      xorg.libXcursor
-      xorg.libXrandr
-      xorg.libXi
+      libx11
+      libxcursor
+      libxrandr
+      libxi
     ];
   };
 
@@ -78,7 +100,56 @@
   networking.networkmanager = {
     enable = true;
     wifi.powersave = false;  # Disable WiFi power save to prevent random disconnects
+    # Eduroam WPA2-Enterprise profile with roaming support
+    ensureProfiles.profiles.eduroam = {
+      connection = {
+        id = "eduroam";
+        type = "wifi";
+        autoconnect = "true";
+        autoconnect-priority = "100";  # High priority - prefer eduroam when available
+        autoconnect-retries = "0";     # Infinite retries (critical for roaming)
+      };
+      wifi = {
+        mode = "infrastructure";
+        ssid = "eduroam";
+        # No bssid set - allows connecting to any eduroam access point
+      };
+      wifi-security = {
+        key-mgmt = "wpa-eap";
+      };
+      "802-1x" = {
+        eap = "peap;";
+        identity = eduroamIdentity;
+        anonymous-identity = eduroamAnonymousIdentity;
+        password = eduroamPassword;
+        phase2-auth = "mschapv2";
+      };
+      ipv4.method = "auto";
+      ipv6.method = "auto";
+    };
   };
+
+  # Notify apps when network connectivity changes (helps Teams PWA reconnect)
+  networking.networkmanager.dispatcherScripts = [
+    {
+      type = "basic";
+      source = pkgs.writeShellScript "99-notify-network-change" ''
+        case "$2" in
+          up|connectivity-change)
+            # Brief delay to let DNS/DHCP settle
+            sleep 2
+            # Send notification as logged-in user to wake Chrome's event loop
+            DISPLAY_USER=$(logname 2>/dev/null || echo "")
+            if [ -n "$DISPLAY_USER" ]; then
+              UID=$(id -u "$DISPLAY_USER")
+              su - "$DISPLAY_USER" -c \
+                "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID/bus notify-send -t 3000 -u low 'Network' 'Connection restored on $1'" &
+            fi
+            ;;
+        esac
+      '';
+    }
+  ];
 
   # Tailscale VPN
   services.tailscale.enable = true;
@@ -94,6 +165,34 @@
     # Allow Tailscale traffic
     trustedInterfaces = [ "tailscale0" ];
     checkReversePath = "loose";  # Required for Tailscale exit nodes
+  };
+
+  # When iwd is the WiFi backend, WPA2-Enterprise needs an iwd-native profile.
+  # NM's ensureProfiles alone can't bridge 802.1X credentials to iwd.
+  systemd.services.iwd-eduroam-profile = lib.mkIf (config.networking.networkmanager.wifi.backend == "iwd") {
+    description = "Create iwd eduroam WPA2-Enterprise profile";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "NetworkManager.service" ];
+    after = [ "iwd.service" ];
+    requires = [ "iwd.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      cat > /var/lib/iwd/eduroam.8021x << 'EOF'
+      [Security]
+      EAP-Method=PEAP
+      EAP-Identity=${eduroamAnonymousIdentity}
+      EAP-PEAP-Phase2-Method=MSCHAPV2
+      EAP-PEAP-Phase2-Identity=${eduroamIdentity}
+      EAP-PEAP-Phase2-Password=${eduroamPassword}
+
+      [Settings]
+      AutoConnect=true
+      EOF
+      chmod 600 /var/lib/iwd/eduroam.8021x
+    '';
   };
 
   # Disable NetworkManager-wait-online to speed up boot
@@ -228,11 +327,50 @@
   environment.etc."opt/chrome/policies/managed/extensions.json".text = builtins.toJSON {
     ExtensionInstallForcelist = [
       "aeblfdkhhhdcdjpifhhbdiojplfjncoa;https://clients2.google.com/service/update2/crx"
+      # Keep Teams Awake - sends fake activity to keep presence "Available"
+      # Workaround for Chromium bug: idle detection doesn't work on Wayland (non-GNOME)
+      "acofimfooiojfhnokmddfgmlfnjnhobp;https://clients2.google.com/service/update2/crx"
     ];
   };
   environment.etc."opt/chrome/policies/managed/session.json".text = builtins.toJSON {
     # 1 = Restore the last session (suppresses the crash restore dialog)
     RestoreOnStartup = 1;
+  };
+  environment.etc."opt/chrome/policies/managed/idle-detection.json".text = builtins.toJSON {
+    # Allow idle detection globally (fixes "Unknown" presence in Teams PWA)
+    # 1 = Allow all sites to use IdleDetection API
+    DefaultIdleDetectionSetting = 1;
+  };
+  environment.etc."opt/chrome/policies/managed/teams-background.json".text = builtins.toJSON {
+    # Disable intensive wake-up throttling (background tabs limited to 1 timer/min)
+    # Teams PWA needs frequent timers for presence heartbeats and reconnection
+    IntensiveWakeUpThrottlingEnabled = false;
+    # Prevent Chrome from freezing/discarding Teams tabs
+    SleepingTabsBlockedForUrls = [
+      "https://[*.]microsoft.com"
+      "https://[*.]teams.microsoft.com"
+      "https://[*.]cloud.microsoft"
+      "https://teams.cloud.microsoft"
+      "https://[*.]office.com"
+      "https://[*.]live.com"
+    ];
+  };
+  environment.etc."opt/chrome/policies/managed/microsoft-cookies.json".text = builtins.toJSON {
+    # Allow third-party cookies for Microsoft auth domains.
+    # Microsoft SSO relies on cross-domain cookies between login.microsoftonline.com,
+    # login.live.com, and the app domains. Without these, auth tokens expire and
+    # PWAs (Teams, Outlook) require daily QR-code 2FA re-authentication.
+    ThirdPartyCookiesAllowedForUrls = [
+      "https://[*.]microsoftonline.com"
+      "https://[*.]microsoft.com"
+      "https://[*.]cloud.microsoft"
+      "https://teams.cloud.microsoft"
+      "https://[*.]live.com"
+      "https://[*.]office.com"
+      "https://[*.]office365.com"
+      "https://[*.]sharepoint.com"
+      "https://[*.]teams.microsoft.com"
+    ];
   };
 
   environment.systemPackages = with pkgs; [
@@ -243,6 +381,7 @@
     bun
     wl-clipboard
     xdg-utils
+    bubblewrap
     efibootmgr
     lm_sensors
     powertop
@@ -293,10 +432,20 @@
     "net.ipv4.conf.default.accept_redirects" = 0;
     "net.ipv6.conf.all.accept_redirects" = 0;
     "net.ipv6.conf.default.accept_redirects" = 0;
+    # TCP keepalive tuning - detect dead connections faster after network changes
+    # Default keepalive_time is 7200s (2 hours!) which leaves stale WebSockets
+    # undetected after WiFi roaming. Total detection time: 60 + (6 × 10) = 120s
+    "net.ipv4.tcp_keepalive_time" = 60;    # Start probing after 60s idle
+    "net.ipv4.tcp_keepalive_intvl" = 10;   # 10s between probes
+    "net.ipv4.tcp_keepalive_probes" = 6;   # Give up after 6 failed probes
   };
 
   # I/O scheduler tuning for NVMe (use none/mq-deadline for best performance)
-  services.udev.extraRules = ''
+  services.udev.extraRules = lib.optionalString
+    (builtins.elem config.networking.hostName hostsWithMicMuteLed) ''
+    # Allow the active user service (WirePlumber) to sync the hardware mic mute LED.
+    SUBSYSTEM=="leds", KERNEL=="hda::micmute", RUN+="${micMuteLedPermissions} %S%p/brightness"
+  '' + ''
     # NVMe namespaces - use none scheduler (lowest latency)
     ACTION=="add|change", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="none"
     # SATA SSDs - use mq-deadline

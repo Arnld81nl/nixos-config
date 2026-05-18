@@ -208,12 +208,12 @@ windowrule = match:class 1[pP]assword, no_screen_share on
 - `suppress_event maximize/fullscreen/activate` - Ignore window events
 - `no_screen_share on` - Hide window from screen sharing
 
-**Properties without new syntax equivalent:**
-- `scrollInput` - No equivalent in `windowrule`; must use legacy `windowrulev2` format
+**Scroll properties (split in 0.54+):**
+- `scrollInput` → `scroll_mouse` (mouse wheel) and `scroll_touchpad` (touchpad) — separate controls
 
 **Implementation:** Window rules are split across files:
-- `home/hyprland/looknfeel.nix` - Most window rules (using new syntax)
-- `home/hyprland/input.nix` - `scrollInput` rule (must use legacy `windowrulev2`)
+- `home/hyprland/looknfeel.nix` - Most window rules
+- `home/hyprland/input.nix` - Scroll rules for terminal
 
 **Documentation:** https://wiki.hypr.land/Configuring/Window-Rules/
 
@@ -403,17 +403,17 @@ Encrypted app profile backup system using Age encryption and a private GitHub re
    ```
 
 2. Store the private key in 1Password:
-   - Create a new item in 1Password (e.g., "age-key" in Private vault)
+   - Create a new item in 1Password (e.g., "age-key" in your private vault)
    - Add a field called "private-key" with the `AGE-SECRET-KEY-1...` value
-   - The 1Password reference will be: `op://Private/age-key/private-key`
+   - The 1Password reference will look like: `op://VAULT/age-key/private-key`
 
 3. Configure in `home/home.nix`:
    ```nix
    programs.app-backup = {
      enable = true;
-     # Repo is pre-configured to: git@github.com:Arnld81nl/private-settings.git
+     repoUrl = "git@github.com:YOUR_USER/private-settings.git";
      ageRecipient = "age1...your-public-key...";
-     ageKey1Password = "op://Private/age-key/private-key";
+     ageKey1Password = "op://VAULT/age-key/private-key";
    };
    ```
 

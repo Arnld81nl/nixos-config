@@ -7,14 +7,18 @@ let
 
   # Load secrets from local file (gitignored) or use placeholders
   # Use absolute path because gitignored files aren't included in flake source
-  secretsPath = /home/arnold/nixos-config/home/secrets.nix;
+  secretsPath = "/home/${username}/nixos-config/home/secrets.nix";
   hasSecrets = builtins.pathExists secretsPath;
   secrets = if hasSecrets then import secretsPath else {
     gitEmail = "your-email@example.com";
     onePassword = {
       account = "my";
-      ageKey = "op://Private/age-key/private-key";
-      sshKey = "op://Private/ssh-key/private key";
+      ageKey = "op://VAULT/age-key/private-key";
+      sshKey = "op://VAULT/ssh-key/private key";
+    };
+    appBackup = {
+      repoUrl = "git@github.com:YOUR_USER/private-settings.git";
+      ageRecipient = "age1...your-public-key...";
     };
     vpn = {
       vpn1 = { name = "VPN 1"; host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
@@ -60,6 +64,7 @@ in
   # Git configuration
   programs.git = {
     enable = true;
+    signing.format = "openpgp";
     settings.user = {
       name = "Arnld81nl";
       email = secrets.gitEmail;
@@ -70,6 +75,7 @@ in
   xdg.userDirs = {
     enable = true;
     createDirectories = true;
+    setSessionVariables = true;
     desktop = null;  # Don't create Desktop
     documents = "${config.home.homeDirectory}/Documents";
     download = "${config.home.homeDirectory}/Downloads";
@@ -79,7 +85,7 @@ in
     templates = null;
     videos = null;
     extraConfig = {
-      XDG_CODE_DIR = "${config.home.homeDirectory}/Code";
+      CODE = "${config.home.homeDirectory}/Code";
     };
   };
 
@@ -563,11 +569,8 @@ in
     # PWA icons (Microsoft 365 apps) - multiple sizes for proper display
     # Note: No custom index.theme needed - system hicolor theme already declares these directories
     ".local/share/icons/hicolor/48x48/apps/outlook-pwa.png".source = ./icons/outlook-pwa-48.png;
-    ".local/share/icons/hicolor/48x48/apps/teams-pwa.png".source = ./icons/teams-pwa-48.png;
     ".local/share/icons/hicolor/128x128/apps/outlook-pwa.png".source = ./icons/outlook-pwa.png;
-    ".local/share/icons/hicolor/128x128/apps/teams-pwa.png".source = ./icons/teams-pwa.png;
     ".local/share/icons/hicolor/256x256/apps/outlook-pwa.png".source = ./icons/outlook-pwa-256.png;
-    ".local/share/icons/hicolor/256x256/apps/teams-pwa.png".source = ./icons/teams-pwa-256.png;
     ".local/share/icons/hicolor/48x48/apps/onedrive.png".source = ./icons/onedrive-48.png;
     ".local/share/icons/hicolor/128x128/apps/onedrive.png".source = ./icons/onedrive.png;
     ".local/share/icons/hicolor/256x256/apps/onedrive.png".source = ./icons/onedrive-256.png;
@@ -663,19 +666,6 @@ in
     };
   };
 
-  xdg.desktopEntries.teams-pwa = {
-    name = "Microsoft Teams";
-    exec = "google-chrome-stable --profile-directory=Default --app-id=ompifgpmddkgmclendfeacglnodjjndh %U";
-    icon = "teams-pwa";
-    comment = "Microsoft Teams web app";
-    categories = [ "Network" "InstantMessaging" "Office" ];
-    terminal = false;
-    mimeType = [ "x-scheme-handler/web+msteams" ];
-    startupNotify = true;
-    settings = {
-      StartupWMClass = "crx_ompifgpmddkgmclendfeacglnodjjndh";
-    };
-  };
 
   # User packages
   home.packages = with pkgs; [
@@ -767,6 +757,8 @@ in
       "--enable-features=TouchpadOverscrollHistoryNavigation"
       "--disable-features=VaapiVideoDecodeLinuxGL,VaapiVideoEncoder"
       "--hide-crash-restore-bubble"
+      "--disable-renderer-backgrounding"
+      "--disable-backgrounding-occluded-windows"
     ];
   };
 
@@ -785,8 +777,8 @@ in
   programs.app-backup = {
     enable = true;
     # These are placeholder values - override in ~/.config/app-backup/config after rebuild
-    repoUrl = "git@github.com:Arnld81nl/private-settings.git";
-    ageRecipient = "age19dj7dhgv4sxuzy32s3zwv84zss2uuq5jxgmf7lh867m9lzddp9tq4qx452";
+    repoUrl = secrets.appBackup.repoUrl or "git@github.com:YOUR_USER/private-settings.git";
+    ageRecipient = secrets.appBackup.ageRecipient or "age1...your-public-key...";
     ageKey1Password = secrets.onePassword.ageKey;
     ageKeyPath = "~/.config/age/key.txt";
     sshKey1Password = secrets.onePassword.sshKey;

@@ -1,5 +1,11 @@
 result
 packages/forge/target/
+.codex
+.codex/
 
 # Local secrets (contains email, VPN IPs, 1Password paths)
 home/secrets.nix
+*.key
+*.pem
+*.p12
+*.pfx

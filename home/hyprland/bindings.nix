@@ -106,7 +106,7 @@ in
   bind = $mainMod, W, exec, $browser --app=https://web.whatsapp.com/
   bind = $mainMod, Y, exec, $browser --app=https://youtube.com/
   bind = $mainMod, O, exec, $browser --app=https://outlook.office.com/
-  bind = $mainMod, T, exec, $browser --app=https://teams.microsoft.com/
+  bind = $mainMod, T, exec, $browser "--profile-directory=Profile 1" --app-id=ompifgpmddkgmclendfeacglnodjjndh
   bind = $mainMod SHIFT, A, exec, $browser --app=https://chatgpt.com/
   bind = $mainMod SHIFT, P, exec, $browser --app=https://photos.google.com/
   bind = $mainMod SHIFT, X, exec, $browser --app=https://x.com/

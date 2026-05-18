@@ -18,14 +18,14 @@
       tree-sitter
 
       # LSP servers
-      nodePackages.typescript-language-server  # TypeScript/JS
+      typescript-language-server               # TypeScript/JS
       vscode-langservers-extracted             # HTML/CSS/JSON
       pyright                                   # Python
       rust-analyzer                             # Rust
       lua-language-server                       # Lua (for Neovim config)
 
       # Formatters
-      nodePackages.prettier                     # JS/TS/HTML/CSS/JSON
+      prettier                                  # JS/TS/HTML/CSS/JSON
       black                                     # Python
       ruff                                      # Python linter/formatter
       rustfmt                                   # Rust
