@@ -123,6 +123,10 @@ in
         anonymous-identity = eduroamAnonymousIdentity;
         password = eduroamPassword;
         phase2-auth = "mschapv2";
+        # RADIUS cert chains to a public CA. Point at the system CA bundle
+        # explicitly — system-ca-certs=true works for iwd but wpa_supplicant
+        # needs a single bundle file, not the /etc/ssl/certs directory.
+        ca-cert = "/etc/ssl/certs/ca-bundle.crt";
       };
       ipv4.method = "auto";
       ipv6.method = "auto";
@@ -167,36 +171,16 @@ in
     checkReversePath = "loose";  # Required for Tailscale exit nodes
   };
 
-  # When iwd is the WiFi backend, WPA2-Enterprise needs an iwd-native profile.
-  # NM's ensureProfiles alone can't bridge 802.1X credentials to iwd.
-  systemd.services.iwd-eduroam-profile = lib.mkIf (config.networking.networkmanager.wifi.backend == "iwd") {
-    description = "Create iwd eduroam WPA2-Enterprise profile";
-    wantedBy = [ "multi-user.target" ];
-    before = [ "NetworkManager.service" ];
-    after = [ "iwd.service" ];
-    requires = [ "iwd.service" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      cat > /var/lib/iwd/eduroam.8021x << 'EOF'
-      [Security]
-      EAP-Method=PEAP
-      EAP-Identity=${eduroamAnonymousIdentity}
-      EAP-PEAP-Phase2-Method=MSCHAPV2
-      EAP-PEAP-Phase2-Identity=${eduroamIdentity}
-      EAP-PEAP-Phase2-Password=${eduroamPassword}
-
-      [Settings]
-      AutoConnect=true
-      EOF
-      chmod 600 /var/lib/iwd/eduroam.8021x
-    '';
-  };
-
   # Disable NetworkManager-wait-online to speed up boot
   systemd.services.NetworkManager-wait-online.enable = lib.mkForce false;
+
+  # After resume, iwd sometimes thinks wlan0 is still associated when the
+  # radio actually dropped. Bounce the radio so autoconnect re-fires cleanly.
+  powerManagement.resumeCommands = ''
+    ${pkgs.networkmanager}/bin/nmcli radio wifi off || true
+    sleep 2
+    ${pkgs.networkmanager}/bin/nmcli radio wifi on || true
+  '';
 
   # Timezone and locale
   time.timeZone = "Europe/Amsterdam";

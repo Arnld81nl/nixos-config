@@ -26,18 +26,10 @@
     options mt7925-common disable_clc=1
   '';
 
-  # Use iwd instead of wpa_supplicant for faster WiFi reconnection after suspend
-  # iwd handles suspend/resume much better than wpa_supplicant
-  networking.wireless.iwd = {
-    enable = true;
-    settings = {
-      General = {
-        EnableNetworkConfiguration = false;  # Let NetworkManager handle IP config
-      };
-      Settings = {
-        AutoConnect = true;
-      };
-    };
-  };
-  networking.networkmanager.wifi.backend = "iwd";
+  # WiFi backend: NetworkManager + wpa_supplicant (default).
+  # iwd was tried first but its autoconnect state machine wedges after sleep /
+  # AP-drop events, and the NM↔iwd D-Bus glue throws Station.GetOrderedNetworks
+  # mismatches on this nixpkgs/iwd combo. wpa_supplicant handles WPA2-Enterprise
+  # (eduroam) and roaming reliably enough; the marginal iwd power/roam advantages
+  # weren't worth the daily breakage.
 }
