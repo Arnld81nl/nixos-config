@@ -22,7 +22,7 @@ let
     };
     vpn = {
       vpn1 = { name = "VPN 1"; host = "0.0.0.0:10443"; opItem = "Vault/VPN-Item"; cert = ""; };
-      vpn2 = { name = "VPN 2"; host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; cert = ""; };
+      vpn2 = { name = "VPN 2"; type = "ipsec"; server = "vpn.example.com"; ikeVersion = "1"; opItem = "Vault/VPN-Item"; opAccount = "my"; };
       vpn3 = { name = "VPN 3"; host = "0.0.0.0:443"; opItem = "Vault/VPN-Item"; opAccount = "my"; cert = ""; ovpnConfig = ""; subnet = "0.0.0"; };
       vpn4 = { name = "VPN 4"; wgConfig = ""; };
     };
@@ -153,10 +153,122 @@ in
         NAME_UPPER=$(echo "$NAME" | tr '[:lower:]' '[:upper:]')
 
         # Get config for this VPN
-        eval "HOST=\$VPN_''${NAME_UPPER}_HOST"
-        eval "OP_ITEM=\$VPN_''${NAME_UPPER}_OP_ITEM"
-        eval "TRUSTED_CERT=\$VPN_''${NAME_UPPER}_CERT"
         eval "VPN_TYPE=\$VPN_''${NAME_UPPER}_TYPE"
+        eval "OP_ITEM=\$VPN_''${NAME_UPPER}_OP_ITEM"
+        eval "OP_ACCOUNT_OVERRIDE=\$VPN_''${NAME_UPPER}_OP_ACCOUNT"
+        EFFECTIVE_OP_ACCOUNT="''${OP_ACCOUNT_OVERRIDE:-$OP_ACCOUNT}"
+
+        # Handle IPsec VPNs (strongSwan) - used by FortiGate dial-up.
+        # Reads PSK + username + password from 1Password, writes a swanctl conf
+        # to a tmp file, loads it, and initiates the SA.
+        if [[ "$VPN_TYPE" == "ipsec" ]]; then
+          eval "SERVER=\$VPN_''${NAME_UPPER}_SERVER"
+          eval "IKE_VERSION=\$VPN_''${NAME_UPPER}_IKE_VERSION"
+          IKE_VERSION="''${IKE_VERSION:-1}"
+
+          if [[ -z "$SERVER" ]]; then
+            echo "Error: VPN '$NAME' has no SERVER configured in $CONFIG_FILE"
+            exit 1
+          fi
+
+          CONN="vpn$NAME"
+          CONF_FILE="/tmp/.vpn-ipsec-$NAME.conf"
+
+          # Disconnect if already up
+          if sudo swanctl --list-sas 2>/dev/null | grep -qE "^$CONN:"; then
+            echo "Disconnecting $NAME VPN..."
+            sudo swanctl --terminate --ike "$CONN" >/dev/null 2>&1 || true
+            sudo swanctl --unload-conn "$CONN" >/dev/null 2>&1 || true
+            sudo rm -f "$CONF_FILE"
+            echo "Disconnected."
+            exit 0
+          fi
+
+          echo "Connecting to $NAME VPN (IPsec)..."
+
+          USER=$(op read "op://$OP_ITEM/username" --account "$EFFECTIVE_OP_ACCOUNT" 2>/dev/null)
+          PASSWORD=$(op read "op://$OP_ITEM/password" --account "$EFFECTIVE_OP_ACCOUNT" 2>/dev/null)
+          PSK=$(op read "op://$OP_ITEM/psk" --account "$EFFECTIVE_OP_ACCOUNT" 2>/dev/null)
+          if [[ -z "$USER" || -z "$PASSWORD" || -z "$PSK" ]]; then
+            echo "Error: Could not retrieve PSK/username/password from 1Password."
+            echo "Ensure '$OP_ITEM' has username, password, and psk fields (account: $EFFECTIVE_OP_ACCOUNT)."
+            exit 1
+          fi
+
+          # IKE phase-1 local-id (FortiGate dial-up peer ID).
+          # Optional 1P field; defaults to the XAuth/EAP username when absent.
+          LOCAL_ID=$(op read "op://$OP_ITEM/local-id" --account "$EFFECTIVE_OP_ACCOUNT" 2>/dev/null)
+          LOCAL_ID="''${LOCAL_ID:-$USER}"
+
+          # Build swanctl conf. For IKEv1 we use aggressive + XAuth (FortiGate
+          # dial-up). For IKEv2 we use EAP-MSCHAPv2 (no aggressive mode).
+          # strongSwan 6.x settings parser treats only newlines (not ';') as
+          # separators inside blocks, so each setting must be on its own line.
+          if [[ "$IKE_VERSION" == "2" ]]; then
+            LOCAL_AUTH_BLOCKS=$(printf 'local-1 {\n      auth = eap-mschapv2\n      eap_id = %s\n      id = %s\n    }' "$USER" "''${LOCAL_ID:-$USER}")
+            AGGRESSIVE_LINE=""
+            SECRETS_BLOCK=$(printf 'eap-%s {\n    id = %s\n    secret = "%s"\n  }' "$CONN" "$USER" "$PASSWORD")
+          else
+            LOCAL_AUTH_BLOCKS=$(printf 'local-1 {\n      auth = psk\n      id = %s\n    }\n    local-2 {\n      auth = xauth-generic\n      xauth_id = %s\n    }' "$LOCAL_ID" "$USER")
+            AGGRESSIVE_LINE="aggressive = yes"
+            SECRETS_BLOCK=$(printf 'xauth-%s {\n    id = %s\n    secret = "%s"\n  }' "$CONN" "$USER" "$PASSWORD")
+          fi
+
+          # Write the swanctl conf as root, 600 perms (contains plaintext PSK + creds).
+          # Proposals list is broad to match common FortiGate dial-up phase-1/2 configs.
+          sudo install -m 600 -o root -g root /dev/null "$CONF_FILE"
+          sudo tee "$CONF_FILE" >/dev/null <<EOF
+        connections {
+          $CONN {
+            version = $IKE_VERSION
+            proposals = aes256-sha256-ecp256,aes256-sha256-modp2048,aes128-sha256-ecp256,aes128-sha256-modp2048,aes256-sha1-modp1024,aes128-sha1-modp1024
+            $AGGRESSIVE_LINE
+            remote_addrs = $SERVER
+            vips = 0.0.0.0
+            $LOCAL_AUTH_BLOCKS
+            remote-1 {
+              auth = psk
+            }
+            children {
+              $CONN {
+                esp_proposals = aes256-sha256-ecp256,aes256-sha256-modp2048,aes128-sha256-ecp256,aes128-sha256-modp2048,aes256-sha1-modp1024
+                local_ts = dynamic
+                remote_ts = 0.0.0.0/0
+                start_action = none
+              }
+            }
+          }
+        }
+        secrets {
+          ike-$CONN {
+            id = ''${LOCAL_ID:-%any}
+            secret = "$PSK"
+          }
+          $SECRETS_BLOCK
+        }
+        EOF
+
+          sudo swanctl --load-conns --file "$CONF_FILE" > /tmp/vpn-$NAME.log 2>&1
+          sudo swanctl --load-creds --file "$CONF_FILE" >> /tmp/vpn-$NAME.log 2>&1
+          sudo swanctl --initiate --child "$CONN" >> /tmp/vpn-$NAME.log 2>&1
+
+          sleep 3
+          if sudo swanctl --list-sas 2>/dev/null | grep -qE "^$CONN:"; then
+            echo "Connected to $NAME VPN."
+          else
+            echo "Connection failed. Check /tmp/vpn-$NAME.log"
+            cat /tmp/vpn-$NAME.log
+            echo "--- Rendered conf (secrets redacted) at $CONF_FILE ---"
+            sudo sed 's/secret = ".*"/secret = "<redacted>"/' "$CONF_FILE"
+            sudo swanctl --unload-conn "$CONN" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          exit 0
+        fi
+
+        # Below here: HOST-based VPNs (Fortinet SSL-VPN, OpenVPN)
+        eval "HOST=\$VPN_''${NAME_UPPER}_HOST"
+        eval "TRUSTED_CERT=\$VPN_''${NAME_UPPER}_CERT"
 
         if [[ -z "$HOST" ]]; then
           echo "Error: VPN '$NAME' not configured in $CONFIG_FILE"
@@ -270,6 +382,15 @@ in
           fi
         }
 
+        check_ipsec() {
+          local conn="$1"
+          if sudo -n swanctl --list-sas 2>/dev/null | grep -qE "^$conn:"; then
+            echo "true"
+          else
+            echo "false"
+          fi
+        }
+
         check_openvpn_vpn3() {
           if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
             echo "true"
@@ -286,8 +407,8 @@ in
           fi
         }
 
-        vpn2_connected=$(check_fortivpn "''${VPN_2_HOST%%:*}")
         vpn1_connected=$(check_fortivpn "''${VPN_1_HOST%%:*}")
+        vpn2_connected=$(check_ipsec "vpn2")
         vpn3_connected=$(check_openvpn_vpn3)
         vpn4_connected=$(check_wireguard_vpn4)
 
@@ -319,16 +440,12 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        CONFIG_FILE="$HOME/.config/vpn/config"
-        if [[ -f "$CONFIG_FILE" ]]; then
-          source "$CONFIG_FILE"
-          IP="''${VPN_2_HOST%%:*}"
-          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$IP"; then
-            echo '{"text": "${secrets.vpn.vpn2.name or "VPN 2"} ●", "icon": ""}'
-            exit 0
-          fi
+        # IPsec (strongSwan) - check for established SA named "vpn2"
+        if sudo -n swanctl --list-sas 2>/dev/null | grep -qE "^vpn2:"; then
+          echo '{"text": "${secrets.vpn.vpn2.name or "VPN 2"} ●", "icon": ""}'
+        else
+          echo '{"text": "${secrets.vpn.vpn2.name or "VPN 2"} ○", "icon": ""}'
         fi
-        echo '{"text": "${secrets.vpn.vpn2.name or "VPN 2"} ○", "icon": ""}'
       '';
     };
 
@@ -490,15 +607,19 @@ in
         # 1Password account for work items
         OP_ACCOUNT="my"
 
-        # VPN 1 (Fortinet, username/password from 1Password)
+        # VPN 1 (Fortinet SSL-VPN, username/password from 1Password)
         VPN_1_HOST="0.0.0.0:10443"
         VPN_1_OP_ITEM="Vault/VPN-Item"
         VPN_1_CERT=""  # Will be shown on first connect
 
-        # VPN 2 (Fortinet, username/password from 1Password)
-        VPN_2_HOST="0.0.0.0:443"
+        # VPN 2 (IPsec FortiGate dial-up). 1P item needs username, password, psk,
+        # and (for IKEv1 aggressive) a local-id field.
+        # Use VPN_2_IKE_VERSION=1 for aggressive + XAuth, 2 for IKEv2 + EAP-MSCHAPv2.
+        VPN_2_TYPE="ipsec"
+        VPN_2_SERVER="vpn.example.com"
+        VPN_2_IKE_VERSION="1"
         VPN_2_OP_ITEM="Vault/VPN-Item"
-        VPN_2_CERT=""  # Will be shown on first connect
+        VPN_2_OP_ACCOUNT=""  # Optional per-VPN account override
 
         # VPN 3 (OpenVPN, username/password from 1Password)
         VPN_3_HOST="0.0.0.0:443"
@@ -515,15 +636,17 @@ in
         # 1Password account
         OP_ACCOUNT="${secrets.onePassword.account}"
 
-        # VPN 1 (Fortinet)
+        # VPN 1 (Fortinet SSL-VPN)
         VPN_1_HOST="${secrets.vpn.vpn1.host}"
         VPN_1_OP_ITEM="${secrets.vpn.vpn1.opItem}"
         VPN_1_CERT="${secrets.vpn.vpn1.cert}"
 
-        # VPN 2 (Fortinet)
-        VPN_2_HOST="${secrets.vpn.vpn2.host}"
+        # VPN 2 (IPsec - FortiGate dial-up). local-id read from 1Password at connect time.
+        VPN_2_TYPE="${secrets.vpn.vpn2.type or "ipsec"}"
+        VPN_2_SERVER="${secrets.vpn.vpn2.server or ""}"
+        VPN_2_IKE_VERSION="${secrets.vpn.vpn2.ikeVersion or "1"}"
         VPN_2_OP_ITEM="${secrets.vpn.vpn2.opItem}"
-        VPN_2_CERT="${secrets.vpn.vpn2.cert}"
+        VPN_2_OP_ACCOUNT="${secrets.vpn.vpn2.opAccount or secrets.onePassword.account}"
 
         # VPN 3 (OpenVPN with client certificates)
         VPN_3_HOST="${secrets.vpn.vpn3.host}"

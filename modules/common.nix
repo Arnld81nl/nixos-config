@@ -158,6 +158,11 @@ in
   # Tailscale VPN
   services.tailscale.enable = true;
 
+  # strongSwan (IPsec) - used by IPsec VPN entries in ~/.config/vpn/config.
+  # The daemon runs idle; connections are loaded on-demand by ~/.local/bin/vpn-toggle
+  # via `swanctl --load-conns/--load-creds --file <tmpfile>`.
+  services.strongswan-swanctl.enable = true;
+
   # OneDrive sync (abraunegg client with systemd monitor service)
   services.onedrive.enable = true;
 
@@ -371,6 +376,7 @@ in
     powertop
     nvd # Nix package version diff tool
     forge
+    strongswan # Provides swanctl CLI used by vpn-toggle for IPsec connections
   ];
 
   # Security - passwordless sudo (account has no password)
