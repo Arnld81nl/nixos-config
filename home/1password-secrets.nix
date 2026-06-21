@@ -40,6 +40,10 @@ in
         hostname = "ssh.github.com";
         port = 443;
         user = "git";
+        # The GitHub-authorized key lives in the 1Password agent, not in the
+        # local id_ed25519 file. The global IdentitiesOnly=yes would stop SSH
+        # from ever offering the agent key, so relax it for GitHub only.
+        extraOptions.IdentitiesOnly = "no";
       };
     } // privateSshMatchBlocks;
     extraConfig = ''

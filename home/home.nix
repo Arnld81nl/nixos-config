@@ -857,6 +857,9 @@ in
     imv              # image viewer
     pinta            # image editor
 
+    # 3D printing
+    bambu-studio     # BambuLab 3D printer slicer
+
     # Productivity
     evince           # document/PDF viewer
     localsend        # local file sharing
