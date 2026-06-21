@@ -8,7 +8,9 @@ Configuration details and solutions to issues in this NixOS setup.
 ~/nixos-config/                     # Symlinked from /etc/nixos
 ├── flake.nix                       # Main flake with host definitions
 ├── hosts/
-│   └── x1yoga/                     # Lenovo ThinkPad X1 Yoga Gen 6 (Intel)
+│   ├── G1a/                        # HP ZBook Ultra G1a (AMD Strix Halo) — current daily driver
+│   ├── x1yoga/                     # Lenovo ThinkPad X1 Yoga Gen 6 (Intel) — retired hardware
+│   └── xps9320/                    # Dell XPS 13 9320
 ├── modules/
 │   ├── boot/limine-plymouth.nix    # Bootloader + Plymouth config
 │   ├── common.nix                  # Shared system config
@@ -105,12 +107,13 @@ The ISO automatically:
 
 | Config | Host | Specialisations |
 |--------|------|-----------------|
-| `x1yoga` | ThinkPad X1 Yoga Gen 6 (Intel) | Default (Noctalia), illogical |
+| `G1a` | HP ZBook Ultra G1a (AMD Strix Halo) — current daily driver | Default (Noctalia), illogical |
+| `x1yoga` | ThinkPad X1 Yoga Gen 6 (Intel) — retired hardware | Default (Noctalia), illogical |
 
 ```bash
 # Rebuild (includes all shell specialisations)
 # IMPORTANT: Use --impure to allow access to gitignored secrets.nix
-sudo nixos-rebuild switch --flake .#x1yoga --impure
+sudo nixos-rebuild switch --flake .#G1a --impure
 
 # Or use hostname (auto-detected)
 sudo nixos-rebuild switch --flake . --impure
