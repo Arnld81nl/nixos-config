@@ -13,7 +13,11 @@
 
     # Noctalia Desktop Shell
     noctalia = {
-      url = "github:noctalia-dev/noctalia-shell";
+      # Pinned to the last v4 commit. Noctalia v5 is a ground-up rewrite
+      # (standalone binary + TOML config + `noctalia msg` IPC) that breaks this
+      # config's JSON/quickshell integration. Unpin only alongside a full v5
+      # migration. See CLAUDE.md.
+      url = "github:noctalia-dev/noctalia-shell/a50c92167c8d438000270f7eca36f6eea74f388e";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

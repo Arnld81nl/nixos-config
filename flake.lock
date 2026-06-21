@@ -482,6 +482,7 @@
       "original": {
         "owner": "noctalia-dev",
         "repo": "noctalia-shell",
+        "rev": "a50c92167c8d438000270f7eca36f6eea74f388e",
         "type": "github"
       }
     },
