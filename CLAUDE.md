@@ -331,6 +331,19 @@ pkill -x quickshell && hyprctl dispatch exec noctalia-shell
 pkill -x quickshell && hyprctl dispatch exec "quickshell -c ~/.config/quickshell/ii"
 ```
 
+## Noctalia Pinned to v4 (do not blindly update)
+
+**The `noctalia` flake input is pinned to the last v4 commit** (`a50c92167c8d438000270f7eca36f6eea74f388e`) in `flake.nix`. A plain `nix flake update` / `forge update` will try to pull **v5 and break the build.**
+
+**Why:** Noctalia v5 is a ground-up rewrite, not a compatible upgrade:
+- Module namespace renamed: `programs.noctalia-shell` → `programs.noctalia`
+- Ships as a standalone compiled binary `noctalia` (was a Quickshell QML config). Binary/share dirs renamed `noctalia-shell` → `noctalia`.
+- IPC changed: `qs -c noctalia-shell ipc call X` / `noctalia-shell ipc call X` → **`noctalia msg <command>`**
+- Launch: `exec-once = noctalia-shell` → `noctalia -d`
+- Config format JSON → **TOML** (`programs.noctalia.settings` / `noctalia config`); the hybrid JSON deployment and `qs -c noctalia-shell` symlink become obsolete
+
+**Migrating to v5 requires** rewriting: `home/hyprland/{autostart,bindings,hypridle}.nix`, `home/shells/restart-on-change.nix`, the quickshell symlink + `quickshell` dependency in `home/shells/noctalia/shell.nix`, and converting `settings.json`/`gui-settings.json`/`colors.json` to v5 TOML — then interactive desktop testing. Do this as its own deliberate, tested change, then unpin in `flake.nix`.
+
 ## Noctalia Settings (Hybrid Management)
 
 Noctalia settings use a hybrid approach that allows GUI changes while preserving reproducibility across machines.
