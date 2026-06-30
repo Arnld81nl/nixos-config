@@ -50,6 +50,18 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # mdview - GUI markdown viewer (default .md handler)
+    mdview = {
+      url = "github:DigitalPals/mdview/0.0.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # codex-desktop - OpenAI Codex desktop app for Linux
+    codex-desktop-linux = {
+      url = "github:ilysenko/codex-desktop-linux";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, noctalia, dots-hyprland, rounded-polygon-qmljs, disko, quickshell, hyprland, ... }@inputs:
@@ -75,12 +87,16 @@
     plymouth-cybex = pkgs.callPackage ./packages/plymouth-cybex { };
     forge = pkgs.callPackage ./packages/forge { };
 
+    # Packages from external flakes (passed through to Home Manager)
+    mdview = inputs.mdview.packages.${system}.mdview;
+    codex-desktop = inputs.codex-desktop-linux.packages.${system}.default;
+
     # Home Manager configuration (shell-agnostic - shell comes from osConfig)
     mkHomeManagerConfig = { hostname, username }: {
       home-manager.useGlobalPkgs = true;
       home-manager.useUserPackages = true;
       home-manager.backupFileExtension = "backup";
-      home-manager.extraSpecialArgs = { inherit inputs hostname username dots-hyprland rounded-polygon-qmljs quickshell forge; };
+      home-manager.extraSpecialArgs = { inherit inputs hostname username dots-hyprland rounded-polygon-qmljs quickshell forge mdview codex-desktop; };
       home-manager.users.${username} = import ./home/home.nix;
       # sharedModules removed - external modules now imported conditionally in home.nix
     };

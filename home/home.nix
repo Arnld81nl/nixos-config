@@ -1,5 +1,5 @@
 # Home Manager configuration
-{ config, pkgs, inputs, lib, osConfig, username, ... }:
+{ config, pkgs, inputs, lib, osConfig, username, mdview, codex-desktop, ... }:
 
 let
   # Get shell from NixOS config (set by specialisations)
@@ -40,7 +40,9 @@ in
   imports = [
     ./hyprland        # Modular Hyprland config (includes hypridle)
     ./ghostty.nix
+    ./kitty.nix       # Secondary terminal
     ./neovim.nix      # Neovim with LazyVim dependencies
+    ./voxtype.nix     # Voice dictation (Whisper on the iGPU via Vulkan)
     ./1password-secrets.nix  # 1Password SSH agent integration
     ./app-backup  # App profile backup/restore (browsers)
     ./forge-notify.nix  # Background update checker
@@ -113,6 +115,66 @@ in
     ".local/bin/clipboard-copy-image" = {
       source = ./scripts/clipboard-copy-image;
       executable = true;
+    };
+    # Screen OCR: select a region, extract text via tesseract, copy to clipboard
+    ".local/bin/screen-ocr" = {
+      source = ./scripts/screen-ocr;
+      executable = true;
+    };
+    # Screen recording: toggle a selected-area recording (wf-recorder)
+    ".local/bin/screen-record" = {
+      source = ./scripts/screen-record;
+      executable = true;
+    };
+    # Share clipboard text / files / folders over LocalSend
+    ".local/bin/localsend-share" = {
+      source = ./scripts/localsend-share;
+      executable = true;
+    };
+    # Network link-speed line for fastfetch config.jsonc
+    ".local/bin/fastfetch-link-speed" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env sh
+
+        iface="$(${pkgs.iproute2}/bin/ip route get 1.1.1.1 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/.* dev \([^ ]*\).*/\1/p' | ${pkgs.coreutils}/bin/head -n1)"
+
+        if [ -z "$iface" ]; then
+          iface="$(${pkgs.iproute2}/bin/ip route show default 2>/dev/null | ${pkgs.gnused}/bin/sed -n 's/.* dev \([^ ]*\).*/\1/p' | ${pkgs.coreutils}/bin/head -n1)"
+        fi
+
+        if [ -z "$iface" ]; then
+          printf '%s\n' "Unavailable"
+          exit 0
+        fi
+
+        speed=""
+        if [ -r "/sys/class/net/$iface/speed" ]; then
+          speed="$(${pkgs.coreutils}/bin/cat "/sys/class/net/$iface/speed" 2>/dev/null)"
+        fi
+
+        case "$speed" in
+          ""|-*|*[!0-9]*)
+            ;;
+          *)
+            ${pkgs.gawk}/bin/awk -v iface="$iface" -v speed="$speed" 'BEGIN {
+              if (speed >= 1000) {
+                printf "%s: %g Gbps\n", iface, speed / 1000
+              } else {
+                printf "%s: %d Mbps\n", iface, speed
+              }
+            }'
+            exit 0
+            ;;
+        esac
+
+        wifi="$(${pkgs.iw}/bin/iw dev "$iface" link 2>/dev/null | ${pkgs.gawk}/bin/awk -v iface="$iface" -F': ' '/tx bitrate:/ { print iface ": " $2; found=1; exit }')"
+        if [ -n "$wifi" ]; then
+          printf '%s\n' "$wifi"
+        else
+          printf '%s: %s\n' "$iface" "unknown"
+        fi
+      '';
     };
 
     # User profile picture (used by GDM, SDDM, etc.)
@@ -809,6 +871,8 @@ in
     hyprpicker
     gpu-screen-recorder
     gpu-screen-recorder-gtk
+    wf-recorder     # selected-area screen recording (screen-record script)
+    tesseract       # OCR engine (screen-ocr script)
 
     # File management
     nautilus
@@ -844,6 +908,10 @@ in
     ripgrep
     fd
 
+    # AI / docs
+    codex-desktop    # OpenAI Codex desktop app
+    mdview           # GUI markdown viewer (default .md handler)
+
     # CLI enhancements
     bat              # cat with syntax highlighting
     eza              # modern ls with colors/icons
@@ -874,6 +942,7 @@ in
     noto-fonts-color-emoji
     nerd-fonts.jetbrains-mono
     nerd-fonts.fira-code
+    (pkgs.callPackage ../packages/conthrax { })  # Conthrax futuristic font
   ];
 
   # Web browsers
@@ -912,11 +981,18 @@ in
   };
 
   # Default applications
+  # fastfetch config (referenced by the `command fastfetch` alias)
+  xdg.configFile."fastfetch/config.jsonc".source = ./fastfetch/config.jsonc;
+
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
       # Browser
       "text/html" = "google-chrome.desktop";
+
+      # Markdown (mdview)
+      "text/markdown" = "dev.codex.mdview.desktop";
+      "text/x-markdown" = "dev.codex.mdview.desktop";
       "x-scheme-handler/http" = "google-chrome.desktop";
       "x-scheme-handler/https" = "google-chrome.desktop";
       "x-scheme-handler/about" = "google-chrome.desktop";

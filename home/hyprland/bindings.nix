@@ -111,6 +111,11 @@ in
   bind = $mainMod SHIFT, P, exec, $browser --app=https://photos.google.com/
   bind = $mainMod SHIFT, X, exec, $browser --app=https://x.com/
 
+  # Voice dictation (voxtype) - F9 English, Shift+F9 Dutch
+  bind = $mainMod CTRL, X, exec, voxtype --model base --language en record toggle
+  bind = , F9, exec, voxtype --model base --language en record toggle
+  bind = SHIFT, F9, exec, voxtype --model base --language nl record toggle
+
   # Media key bindings (repeat on hold)
   bindel = , XF86AudioRaiseVolume, exec, wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
   bindel = , XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
