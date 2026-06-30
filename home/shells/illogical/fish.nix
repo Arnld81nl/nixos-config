@@ -102,11 +102,8 @@
     ];
   };
 
-  # Starship prompt (illogical uses default starship)
-  programs.starship = {
-    enable = true;
-    enableFishIntegration = true;
-  };
+  # Prompt is provided by the shared oh-my-posh module (../oh-my-posh.nix),
+  # imported from default.nix. Starship is disabled there.
 
   # Zoxide (smart cd)
   programs.zoxide = {

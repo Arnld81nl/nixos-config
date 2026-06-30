@@ -53,8 +53,8 @@
       hypr-monitors = "hyprctl monitors";
       hypr-workspaces = "hyprctl workspaces";
 
-      # System info
-      fastfetch = "fastfetch -c archey";
+      # System info (uses ~/.config/fastfetch/config.jsonc)
+      fastfetch = "command fastfetch";
     };
 
     # Fish functions
@@ -94,110 +94,8 @@
     ];
   };
 
-  # Starship prompt - Noctalia custom theme
-  programs.starship = {
-    enable = true;
-    enableFishIntegration = true;
-    settings = {
-      add_newline = true;
-      command_timeout = 200;
-
-      format = ''
-        ╭─$sudo$os$directory$fill$git_branch$git_status$nodejs$package$python$java$php
-        ╰─ ❯❯ '';
-
-      fill.symbol = " ";
-
-      username = {
-        show_always = true;
-        format = "[$user]($style)";
-        style_user = "bold cyan";
-        style_root = "bold red";
-      };
-
-      sudo = {
-        disabled = false;
-        format = "[󱐋]($style)";
-        style = "bold red";
-      };
-
-      os = {
-        disabled = false;
-        format = "[$symbol ]($style)";
-        style = "bold cyan";
-      };
-
-      os.symbols = {
-        Arch = "󰣇";
-        NixOS = "";
-        Linux = "";
-        Macos = "";
-        Windows = "󰍲";
-      };
-
-      directory = {
-        format = "[ 󰉖 $path]($style)";
-        style = "bold cyan";
-        truncation_length = 5;
-        truncate_to_repo = false;
-      };
-
-      git_branch = {
-        format = "[ ($symbol$branch)]($style)";
-        symbol = "";
-        style = "bold yellow";
-      };
-
-      git_status = {
-        format = "([  $all_status$ahead_behind]($style))";
-        style = "bold yellow";
-        ahead = " +\${count}";
-        behind = " -\${count}";
-        diverged = " +\${ahead_count} -\${behind_count}";
-        up_to_date = "";
-        untracked = "?\${count}";
-        stashed = "󰏖\${count}";
-        modified = "!\${count}";
-        staged = "+\${count}";
-        renamed = "»\${count}";
-        deleted = "✘\${count}";
-        conflicted = "=\${count}";
-      };
-
-      nodejs = {
-        format = "[ $version]($style)";
-        style = "bold green";
-        detect_files = ["package.json" ".node-version" ".nvmrc"];
-      };
-
-      package = {
-        format = "[ $version]($style)";
-        symbol = "";
-        style = "bold red";
-        display_private = false;
-      };
-
-      python = {
-        format = "[ $version]($style)";
-        style = "bold green";
-        detect_files = [".python-version" "requirements.txt" "pyproject.toml" "Pipfile"];
-      };
-
-      java = {
-        format = "[ $version]($style)";
-        style = "bold magenta";
-        detect_files = ["pom.xml" "build.gradle" "build.gradle.kts"];
-      };
-
-      php = {
-        format = "[ $version]($style)";
-        style = "bold blue";
-        detect_files = ["composer.json"];
-      };
-
-      character.disabled = true;
-    };
-  };
+  # Prompt is provided by the shared oh-my-posh module (../oh-my-posh.nix),
+  # imported from default.nix. Starship is disabled there.
 
   # Zoxide (smart cd)
   programs.zoxide = {

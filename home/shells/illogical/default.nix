@@ -8,6 +8,7 @@
     ./dotfiles.nix            # Fetch and copy Quickshell configs
     ./packages.nix            # Qt, Quickshell, tools
     ./fish.nix                # Fish shell configuration
+    ../oh-my-posh.nix         # oh-my-posh prompt (replaces Starship)
     ./theming.nix             # Cursor, GTK, icons
     ../restart-on-change.nix  # Auto-restart shell on store path change
   ];
