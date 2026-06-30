@@ -297,7 +297,9 @@ boot.kernelParams = [
 
 ## Shell Restart on Store Path Change
 
-**Problem:** After `nixos-rebuild switch`, the running quickshell process has old `/nix/store/...` paths baked in, while IPC commands (like `qs -c noctalia-shell ipc call launcher toggle`) reference the new path. This causes IPC failures with "No running instances" errors.
+**Problem:** After `nixos-rebuild switch`, the running quickshell process has old `/nix/store/...` paths baked in, while IPC commands (like `noctalia-shell ipc call launcher toggle`) reference the new path. This causes IPC failures with "No running instances" errors.
+
+**IPC command (Noctalia v4):** Use `noctalia-shell ipc call <target> <action>` (e.g. `noctalia-shell ipc call launcher toggle`). The `noctalia-shell` wrapper sets `QS_CONFIG_PATH` to the package's store path, so IPC registers under that store path — this is what the Hyprland keybinds use (`home/hyprland/bindings.nix`). The older `qs -c noctalia-shell ipc call ...` form does NOT match the running instance (it looks up the `~/.config/quickshell/noctalia-shell` symlink path instead) and reports "No running instances".
 
 **Root cause:** Quickshell processes embed their store path at startup. When the package updates, the symlink at `~/.config/quickshell/noctalia-shell` points to the new path, but the running process still has the old path.
 
@@ -329,10 +331,19 @@ The hook:
 
 **Manual restart** (if needed):
 ```bash
-pkill -x quickshell && hyprctl dispatch exec noctalia-shell
+# NOTE: the process is named `.quickshell-wra` (a wrapper), NOT `quickshell`,
+# so `pkill -x quickshell` matches nothing. Match the binary path instead.
+# Run this from an interactive shell, not a script whose own command line
+# contains "bin/quickshell" (pkill -f would self-match and kill the script).
+pkill -f 'bin/quickshell' && hyprctl dispatch exec noctalia-shell
 # Or for Illogical:
-pkill -x quickshell && hyprctl dispatch exec "quickshell -c ~/.config/quickshell/ii"
+pkill -f 'bin/quickshell' && hyprctl dispatch exec "quickshell -c ~/.config/quickshell/ii"
 ```
+
+If the auto-restart hook fails to fire after a rebuild (observed 2026-06-30), the
+old instance keeps running and the launcher keybind stops working until you do
+the manual restart above. Verify exactly one instance is up afterward:
+`ps -eo pid,args | grep '[b]in/quickshell'`.
 
 ## Noctalia Pinned to v4 (do not blindly update)
 
