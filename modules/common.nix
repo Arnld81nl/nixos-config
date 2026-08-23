@@ -10,6 +10,28 @@ let
   eduroamAnonymousIdentity = secrets.eduroam.anonymousIdentity or "anonymous@example.edu";
   eduroamPassword = secrets.eduroam.password or "placeholder";
 
+  # Some eduroam sites run a private RADIUS CA that is in no public trust store,
+  # so the profile has to trust it *in addition to* the public bundle. Which
+  # network that is does not belong in a public repo, so the certificate lives
+  # in the gitignored secrets.nix; without it nothing changes and the profile
+  # keeps validating against public CAs only.
+  eduroamExtraCa = secrets.eduroam.caCert or "";
+  hasEduroamExtraCa = eduroamExtraCa != "";
+
+  # wpa_supplicant wants ONE ca-cert file, so the extra CA is concatenated onto
+  # the system bundle rather than replacing it — no regression for realms whose
+  # RADIUS cert chains to a public CA.
+  #
+  # Deliberately NOT security.pki.certificateFiles: that would add the private
+  # root to the machine-wide trust store, where it could vouch for any TLS host.
+  # It is only ever needed for the 802.1X handshake, so it is scoped to that.
+  eduroamCaBundle = pkgs.writeText "eduroam-ca-bundle.crt" (
+    eduroamExtraCa + "\n" + builtins.readFile config.security.pki.caBundle
+  );
+
+  eduroamCaCert =
+    if hasEduroamExtraCa then "${eduroamCaBundle}" else "/etc/ssl/certs/ca-bundle.crt";
+
   # Mic-mute LED: kernel default rule leaves brightness writable only by root,
   # which prevents WirePlumber's user service from syncing it. Hand ownership
   # to the active user with 0660 instead of the chmod 666 we used before.
@@ -132,10 +154,12 @@ in
         anonymous-identity = eduroamAnonymousIdentity;
         password = eduroamPassword;
         phase2-auth = "mschapv2";
-        # RADIUS cert chains to a public CA. Point at the system CA bundle
-        # explicitly — system-ca-certs=true works for iwd but wpa_supplicant
-        # needs a single bundle file, not the /etc/ssl/certs directory.
-        ca-cert = "/etc/ssl/certs/ca-bundle.crt";
+        # Point at a single CA bundle file explicitly — system-ca-certs=true
+        # works for iwd but wpa_supplicant needs one file, not the
+        # /etc/ssl/certs directory. That is the plain system bundle unless
+        # secrets.nix supplies an extra private RADIUS CA, in which case it is
+        # the system bundle with that CA appended (see eduroamCaBundle above).
+        ca-cert = eduroamCaCert;
       };
       ipv4.method = "auto";
       ipv6.method = "auto";
