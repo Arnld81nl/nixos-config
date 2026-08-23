@@ -73,7 +73,12 @@ in
   programs.nix-ld = {
     enable = true;
     libraries = with pkgs; [
-      stdenv.cc.cc.lib
+      # gcc16, not stdenv.cc.cc.lib (gcc 15): the nix-ld lib dir is also on the
+      # global LD_LIBRARY_PATH below, so its libstdc++ is forced on everything.
+      # Hyprland and its libs are built with gcc 16 and need GLIBCXX_3.4.36,
+      # which gcc 15 does not provide - an older libstdc++ here stops the
+      # compositor from starting at all. Newer libstdc++ is backward compatible.
+      gcc16.cc.lib
       zlib
       openssl
       curl

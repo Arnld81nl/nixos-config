@@ -259,6 +259,46 @@ boot.kernelParams = [
 **Alternative options if issues persist:**
 - `intel_iommu=off` - Disable Intel VT-d (may help with GPU hangs)
 
+## Global LD_LIBRARY_PATH vs. Hyprland (GLIBCXX)
+
+**Problem:** After a flake update, Hyprland refuses to start and
+`xdg-desktop-portal-hyprland.service` fails during activation:
+
+```
+libstdc++.so.6: version `GLIBCXX_3.4.36' not found (required by libhyprutils.so.13)
+```
+
+**Root cause:** `modules/common.nix` puts the nix-ld library directory on the
+**global** `environment.sessionVariables.LD_LIBRARY_PATH` (so NixOS-compiled
+binaries can dlopen those libs, e.g. ONNX runtime via fastembed). That forces
+*that* directory's `libstdc++` on every process — including Hyprland. When the
+Hyprland stack is built with a newer GCC than `pkgs.stdenv.cc` (gcc 16 vs 15 in
+August 2026), the older libstdc++ shadows the correct one and nothing in the
+Hyprland stack can load.
+
+**Solution:** pin the nix-ld libstdc++ to the newest GCC in nixpkgs rather than
+the default stdenv one — newer libstdc++ is backward compatible, so FHS binaries
+keep working:
+
+```nix
+programs.nix-ld.libraries = with pkgs; [
+  gcc16.cc.lib   # NOT stdenv.cc.cc.lib
+  ...
+];
+```
+
+**Diagnosing it:** the failure is invisible until you reboot, because the running
+compositor is the old one. Test the new binary directly before rebooting:
+
+```bash
+D=$(readlink -f /run/current-system/sw/bin/Hyprland | xargs dirname)
+LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib ldd "$D/.Hyprland-wrapped" | grep "not found"
+# any output = the compositor will not start after reboot
+```
+
+Re-check this whenever GCC in nixpkgs moves ahead of the version Hyprland is
+built with.
+
 ## Plymouth Resolution on Limine
 
 **Problem:** Plymouth displays at low resolution (~1080p) regardless of native display.
