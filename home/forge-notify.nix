@@ -18,7 +18,10 @@
     };
     Service = {
       Type = "oneshot";
-      ExecStart = "${forge}/bin/forge-notify --once";
+      # No --once: the binary always runs a single check and exits (the timer
+      # below is what makes it recurring). It was rejecting the flag outright
+      # and the unit failed on every boot with exit status 2.
+      ExecStart = "${forge}/bin/forge-notify";
       # Don't fail the service if the check fails (network issues, etc.)
       # The binary already handles errors gracefully
     };

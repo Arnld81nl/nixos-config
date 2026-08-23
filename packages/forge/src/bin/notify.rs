@@ -4,7 +4,8 @@
 //! Designed to run as a systemd user service.
 //!
 //! Usage:
-//!   forge-notify [--once]     Run check once and exit
+//!   forge-notify              Run check once and exit
+//!   forge-notify --verbose    Same, with debug logging
 //!   forge-notify --help       Show help
 
 use anyhow::Result;
