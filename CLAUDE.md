@@ -259,6 +259,42 @@ boot.kernelParams = [
 **Alternative options if issues persist:**
 - `intel_iommu=off` - Disable Intel VT-d (may help with GPU hangs)
 
+## G1a Webcam (works since kernel 7.2.0)
+
+The HP ZBook Ultra G1a webcam was unusable on Linux through kernel 7.1.x and
+**works from 7.2.0** (verified 2026-08-23). **Nothing in this repo is needed for
+it** — no module, firmware or option was added; it works on the stock kernel.
+
+What landed in 7.2 is `CONFIG_VIDEO_AMD_ISP4_CAPTURE`, the AMD ISP V4L2 capture
+bridge. `amd_isp4_capture` binds to `amd_isp_capture.0.auto` under amdgpu and
+creates `/dev/video0` (card "Preview", `amd_isp41_mdev`) and `/dev/media0`.
+PipeWire picks it up on its own as a `[v4l2]` device and source.
+
+| | |
+|---|---|
+| Formats | **NV12 only**, 640x360 - 2880x1620, all 30fps |
+| Controls | none — `v4l2-ctl -L` is empty (no brightness/exposure) |
+
+**Testing gotcha:** auto-exposure starts fully dark and takes ~2-3s to converge,
+so a single-frame grab looks black and reads as "still broken". Capture ~90
+frames and keep the last one:
+
+```bash
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=1280,height=720,pixelformat=NV12 \
+  --stream-mmap --stream-count=90 --stream-to=stream.nv12
+ffmpeg -f rawvideo -pix_fmt nv12 -s 1280x720 -i stream.nv12 \
+  -vf 'select=eq(n\,89)' -frames:v 1 out.png
+```
+
+Still missing, neither of which the RGB camera needs: the `ov05c10` sensor driver
+(the i2c device exists from ACPI `OMNI5C10` with **no driver bound** — the ISP
+drives the sensor itself) and the `HIMX1092` IR camera used for face unlock,
+which gets no device node at all.
+
+If an app cannot see the camera, suspect the NV12-only, media-controller-centric
+(`I/O MC`) device rather than the driver. And note this is an **all-AMD** host:
+the Intel `ipu7-camera-*` / `icamerasrc` packages are irrelevant here.
+
 ## Global LD_LIBRARY_PATH vs. Hyprland (GLIBCXX)
 
 **Problem:** After a flake update, Hyprland refuses to start and
