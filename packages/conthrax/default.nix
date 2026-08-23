@@ -11,7 +11,7 @@ stdenvNoCC.mkDerivation {
   src = fetchzip {
     url = "https://dl.dafont.com/dl/?f=conthrax";
     extension = "zip";
-    hash = "sha256-DsB89WLlESpkzOV2knADBt555SpM7OFOTHfzcDZbDKw=";
+    hash = "sha256-8yM7/KTlGPmtBMrGVEWHsMPv/m9Ngk60ZGAr3uPklkE=";
     stripRoot = false;
   };
 
@@ -20,8 +20,11 @@ stdenvNoCC.mkDerivation {
 
     install -Dm444 Conthrax-SemiBold.otf \
       "$out/share/fonts/opentype/Conthrax-SemiBold.otf"
-    install -Dm444 "Typodermic Desktop EULA 2023.pdf" \
-      "$out/share/doc/conthrax/Typodermic Desktop EULA 2023.pdf"
+    # dafont repackages this zip periodically and renames the EULA by year
+    # (2023 -> 2026 in Aug 2026), so match whatever PDF ships with it.
+    for eula in *.pdf; do
+      install -Dm444 "$eula" "$out/share/doc/conthrax/$eula"
+    done
 
     runHook postInstall
   '';
