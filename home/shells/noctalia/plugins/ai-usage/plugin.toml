@@ -1,0 +1,23 @@
+# Noctalia v5 bar widget for `ai-usage`.
+#
+# v4 rendered these percentages with a CustomButton (textCommand + parseJson).
+# v5's custom_button has no command-polling equivalent, so the same JSON contract
+# is consumed by this plugin instead — see CLAUDE.md "AI Subscription Usage".
+#
+# Deployed by home/shells/noctalia/shell.nix to
+# ~/.local/share/noctalia/plugins/ai-usage, which Noctalia always scans, and
+# switched on by `[plugins] enabled` in config.toml. Referenced from the bar as
+# `type = "arnold/ai-usage:usage"`.
+
+id          = "arnold/ai-usage"
+name        = "AI Usage"
+version     = "1.0.0"
+# 14 is the first API that accepts [[widget]].actions; well under the 28 this
+# Noctalia build offers, so a v5 update does not have to move it.
+plugin_api  = 14
+author      = "arnold"
+description = "Claude Code / Codex CLI subscription usage in the bar"
+
+[[widget]]
+id    = "usage"
+entry = "widget.luau"

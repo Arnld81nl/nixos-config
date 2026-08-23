@@ -13,11 +13,11 @@
 
     # Noctalia Desktop Shell
     noctalia = {
-      # Pinned to the last v4 commit. Noctalia v5 is a ground-up rewrite
-      # (standalone binary + TOML config + `noctalia msg` IPC) that breaks this
-      # config's JSON/quickshell integration. Unpin only alongside a full v5
-      # migration. See CLAUDE.md.
-      url = "github:noctalia-dev/noctalia-shell/a50c92167c8d438000270f7eca36f6eea74f388e";
+      # Pinned to a v5 tag. v5 is beta-only upstream (no stable release yet), so
+      # this tracks a specific tag rather than a branch: a moving pin would ship
+      # config-schema changes straight to the desktop. Bump deliberately and
+      # re-validate config.toml. See CLAUDE.md "Noctalia v5".
+      url = "github:noctalia-dev/noctalia/v5.0.0-beta.9";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -36,12 +36,6 @@
     # Quickshell (latest git for IdleInhibitor support)
     quickshell = {
       url = "github:quickshell-mirror/quickshell";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    # Hyprland (git version for bug fixes)
-    hyprland = {
-      url = "github:hyprwm/Hyprland";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -64,7 +58,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, noctalia, dots-hyprland, rounded-polygon-qmljs, disko, quickshell, hyprland, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, dots-hyprland, rounded-polygon-qmljs, disko, quickshell, ... }@inputs:
   let
     system = "x86_64-linux";
 
@@ -106,7 +100,7 @@
     mkNixosSystem = { hostname, username ? "arnold", extraModules ? [], useDisko ? true }:
       nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit inputs plymouth-cybex forge username hyprland; };
+        specialArgs = { inherit inputs plymouth-cybex forge username; };
         modules = []
         # Disko for declarative disk partitioning (optional)
         ++ (if useDisko then [

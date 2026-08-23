@@ -335,109 +335,183 @@ built with.
 2. Import it unconditionally in `home/home.nix`
 3. Keep program configs (fish, starship, theming) in the conditionally-imported module to avoid conflicts
 
-## Shell Restart on Store Path Change
+## Shell Restart on Store Path Change (Illogical Impulse only)
 
-**Problem:** After `nixos-rebuild switch`, the running quickshell process has old `/nix/store/...` paths baked in, while IPC commands (like `noctalia-shell ipc call launcher toggle`) reference the new path. This causes IPC failures with "No running instances" errors.
+**Problem:** After `nixos-rebuild switch`, a running quickshell process still has
+old `/nix/store/...` paths baked in while IPC commands reference the new path,
+producing "No running instances" errors.
 
-**IPC command (Noctalia v4):** Use `noctalia-shell ipc call <target> <action>` (e.g. `noctalia-shell ipc call launcher toggle`). The `noctalia-shell` wrapper sets `QS_CONFIG_PATH` to the package's store path, so IPC registers under that store path — this is what the Hyprland keybinds use (`home/hyprland/bindings.nix`). The older `qs -c noctalia-shell ipc call ...` form does NOT match the running instance (it looks up the `~/.config/quickshell/noctalia-shell` symlink path instead) and reports "No running instances".
+**Solution:** `home/shells/restart-on-change.nix` hashes the quickshell package
+path, compares it to `~/.local/state/shell-store-hash`, and restarts the shell
+via `hyprctl dispatch exec` when it changed.
 
-**Root cause:** Quickshell processes embed their store path at startup. When the package updates, the symlink at `~/.config/quickshell/noctalia-shell` points to the new path, but the running process still has the old path.
+**Noctalia is no longer handled here.** v5 ships a systemd user unit
+(`programs.noctalia.systemd.enable`) that is `PartOf hyprland-session.target` and
+carries `X-Restart-Triggers` on its config, so systemd restarts it on rebuild and
+on config changes.
 
-**Solution:** Home Manager activation hook that automatically restarts the shell when store paths change.
-
-**Implementation:** `home/shells/restart-on-change.nix`
-
-The hook:
-1. Hashes the current shell package path (noctalia-shell or quickshell)
-2. Compares to previously stored hash in `~/.local/state/shell-store-hash`
-3. If changed and quickshell is running, kills old process and restarts via `hyprctl dispatch exec`
-4. Records new hash for next comparison
-
-**Behavior:**
-- **First run**: No restart (no previous hash to compare), just records hash
-- **Package unchanged**: No restart, hash matches
-- **Package updated**: Automatic restart via hyprctl
-
-**Edge cases handled:**
-- First run after adding the hook (no restart)
-- No Hyprland running (gracefully skipped)
-- No quickshell running (gracefully skipped)
-- Dry-run mode (respects `$DRY_RUN_CMD`)
-
-**Files:**
-- `home/shells/restart-on-change.nix` - Shared activation hook
-- `home/shells/noctalia/default.nix` - Imports restart module
-- `home/shells/illogical/default.nix` - Imports restart module
-
-**Manual restart** (if needed):
 ```bash
-# NOTE: the process is named `.quickshell-wra` (a wrapper), NOT `quickshell`,
-# so `pkill -x quickshell` matches nothing. Match the binary path instead.
-# Run this from an interactive shell, not a script whose own command line
-# contains "bin/quickshell" (pkill -f would self-match and kill the script).
-pkill -f 'bin/quickshell' && hyprctl dispatch exec noctalia-shell
-# Or for Illogical:
-pkill -f 'bin/quickshell' && hyprctl dispatch exec "quickshell -c ~/.config/quickshell/ii"
+systemctl --user restart noctalia     # Noctalia v5
+pkill -f 'bin/quickshell' && hyprctl dispatch exec "quickshell -c ~/.config/quickshell/ii"   # Illogical
 ```
 
-If the auto-restart hook fails to fire after a rebuild (observed 2026-06-30), the
-old instance keeps running and the launcher keybind stops working until you do
-the manual restart above. Verify exactly one instance is up afterward:
-`ps -eo pid,args | grep '[b]in/quickshell'`.
+Note the Illogical process is named `.quickshell-wra` (a wrapper), so
+`pkill -x quickshell` matches nothing — match the binary path instead, and run it
+from an interactive shell (a script whose own command line contains
+`bin/quickshell` would be matched by `pkill -f` and kill itself).
 
-## Noctalia Pinned to v4 (do not blindly update)
+## Noctalia v5
 
-**The `noctalia` flake input is pinned to the last v4 commit** (`a50c92167c8d438000270f7eca36f6eea74f388e`) in `flake.nix`. A plain `nix flake update` / `forge update` will try to pull **v5 and break the build.**
+**The `noctalia` flake input is pinned to a v5 tag** (`v5.0.0-beta.9`) in
+`flake.nix`. v5 has **no stable release yet** — every v5 tag upstream is a beta —
+so the pin is deliberate: a branch-tracking input would ship config-schema
+changes straight to the desktop. Bump it consciously and re-validate the config.
 
-**Why:** Noctalia v5 is a ground-up rewrite, not a compatible upgrade:
-- Module namespace renamed: `programs.noctalia-shell` → `programs.noctalia`
-- Ships as a standalone compiled binary `noctalia` (was a Quickshell QML config). Binary/share dirs renamed `noctalia-shell` → `noctalia`.
-- IPC changed: `qs -c noctalia-shell ipc call X` / `noctalia-shell ipc call X` → **`noctalia msg <command>`**
-- Launch: `exec-once = noctalia-shell` → `noctalia -d`
-- Config format JSON → **TOML** (`programs.noctalia.settings` / `noctalia config`); the hybrid JSON deployment and `qs -c noctalia-shell` symlink become obsolete
+Upstream also renamed the repo `noctalia-shell` → `noctalia`; v4 lives on a
+frozen `legacy-v4` branch.
 
-**Migrating to v5 requires** rewriting: `home/hyprland/{autostart,bindings,hypridle}.nix`, `home/shells/restart-on-change.nix`, the quickshell symlink + `quickshell` dependency in `home/shells/noctalia/shell.nix`, and converting `settings.json`/`gui-settings.json`/`colors.json` to v5 TOML — then interactive desktop testing. Do this as its own deliberate, tested change, then unpin in `flake.nix`.
+### What changed from v4
 
-## Noctalia Settings (Hybrid Management)
+| | v4 | v5 |
+|---|---|---|
+| Implementation | Quickshell QML config | standalone C++/meson binary |
+| HM module | `programs.noctalia-shell` | `programs.noctalia` |
+| Config | `settings.json` + `gui-settings.json` + `colors.json` | `config.toml` |
+| IPC | `noctalia-shell ipc call launcher toggle` | `noctalia msg panel-toggle launcher` |
+| Lock | `... ipc call lockScreen lock` | `noctalia msg session lock` |
+| Startup | `exec-once = noctalia-shell` | systemd user unit |
+| PAM | `NOCTALIA_PAM_SERVICE` env var | authenticates via the `login` PAM service |
 
-Noctalia settings use a hybrid approach that allows GUI changes while preserving reproducibility across machines.
+Upstream publishes builds to **`noctalia.cachix.org`** (added to
+`nix.settings.substituters` in `modules/common.nix`), so rebuilds do not compile
+the shell from source.
 
-### How It Works
+### Configuration layering
 
-Settings are stored in `~/.config/noctalia/` as regular files (not symlinks). A hash file tracks when the repo version was last deployed:
+| File | Owner |
+|------|-------|
+| `~/.config/noctalia/config.toml` | Home Manager, read-only symlink, generated from `home/shells/noctalia/config.toml` |
+| `~/.local/state/noctalia/settings.toml` | Noctalia itself — every change made in the Settings GUI |
 
-- **First run**: Configs are copied from repo to `~/.config/noctalia/`
-- **GUI changes**: Saved locally, persist across reboots and rebuilds
-- **Repo updated**: When you pull updated configs from another machine and rebuild, the hash changes and local files are overwritten
+Noctalia layers the state file **on top of** config.toml, so GUI tweaks persist
+across rebuilds by themselves. This replaces v4's copy-and-hash deployment;
+there is no `.deployed-hash` any more and nothing in `~/.config/noctalia` is
+overwritten.
 
-Implementation: `home/shells/noctalia/shell.nix:44-70`
+Consequence worth remembering: **a key present in the state file keeps winning
+over the repo.** If a change to `config.toml` seems to have no effect, check
+whether the GUI (or the first-run setup wizard) already wrote that key to
+`~/.local/state/noctalia/settings.toml`, and delete it there.
 
-### Syncing Settings to Another Machine
+To promote a GUI change into the repo, copy the keys from the state file into
+`home/shells/noctalia/config.toml`, keeping the `/home/USER` placeholder that
+`shell.nix` substitutes. Validate before rebuilding — the Home Manager module
+also validates at build time and fails the build on a bad config:
 
-When you've made GUI changes you want to sync to the repo:
-
-1. **Ask Claude**: "Sync my Noctalia settings to the repo"
-   - Claude copies `~/.config/noctalia/*.json` → `home/shells/noctalia/`
-2. **Commit and push** the changes
-3. **On other machine**: Pull and rebuild → hash changes → local files updated
-
-### Config Files
-
-| File | Purpose |
-|------|---------|
-| `settings.json` | Main shell settings (bar widgets, layouts) |
-| `gui-settings.json` | GUI-specific preferences |
-| `colors.json` | Color scheme |
-| `plugins.json` | Plugin configuration |
-| `.deployed-hash` | Tracks repo version (auto-managed) |
-
-### Forcing a Re-sync
-
-To force re-deployment from repo (discarding local changes):
 ```bash
-rm ~/.config/noctalia/.deployed-hash
-sudo nixos-rebuild switch --flake .
+noctalia config validate home/shells/noctalia/config.toml
 ```
+
+### Theme templates — handle with care
+
+Noctalia renders theme templates into *other applications'* config files, which
+collides with anything Home Manager manages. Two rules learned the hard way:
+
+1. **A disabled builtin template still runs its `undo.sh` on every startup.**
+   Those undo hooks delete files and rewrite configs. Enabling the gtk3/gtk4/qt
+   templates made Home Manager activation fail on a clobbered
+   `~/.config/gtk-4.0/gtk.css`; leaving `ghostty` disabled made its undo hook
+   delete `~/.config/ghostty/themes/noctalia`, which `home/ghostty.nix` seeds and
+   `theme = noctalia` references. Only `ghostty` is enabled, and its apply hook
+   is a no-op while that line is already present.
+
+2. **The builtin `hyprland` template is not used.** Its `apply.sh` probes the
+   running compositor and writes `~/.config/hypr/hyprland.lua` whenever it reads
+   as Lua-config mode — a stray `hyprland.lua` outranks `hyprland.conf` and boots
+   a stock desktop (see *Hyprland 0.56+ Lua Config*). It also appends a `source`
+   line to `hyprland.conf`, which is a read-only Home Manager symlink. Instead,
+   `[theme.templates.user.hyprland]` in `config.toml` renders the same shipped
+   template to a fixed path, and `home/hyprland/default.nix` sources it
+   declaratively.
+
+   Its output is named `noctalia-colors.conf`, **not** `noctalia.conf`, because
+   the builtin template's undo hook deletes `~/.config/hypr/noctalia.conf` and
+   strips any line matching `source = .*noctalia\.conf` from `hyprland.conf`.
+   That same regex is why the per-shell includes were renamed
+   `bindings-noctalia.conf` → `noctalia-bindings.conf` (and likewise for
+   `autostart`): the old names matched, so the undo hook tried to strip the
+   keybind include.
+
+### Command-output bar widgets need a plugin
+
+v4's `CustomButton` could poll a command and render its stdout
+(`textCommand` + `parseJson`). **v5's `custom_button` has no equivalent** — its
+settings are `glyph`, `label`, `tooltip` and click/scroll actions only, and there
+is no builtin widget that renders command output (`text` is fixed text).
+
+That affected four widgets. `ai-usage` is fixed — it is now a local Luau plugin
+(`home/shells/noctalia/plugins/ai-usage`, see *AI Subscription Usage → Bar
+widget*). The three VPN buttons are still click-actions with no live text; they
+previously showed status via `vpn-status-1/2/3` and want the same treatment.
+
+### Local plugins
+
+A plugin is a directory holding `plugin.toml` plus its `.luau` entry files.
+Noctalia scans `~/.local/share/noctalia/plugins` unconditionally — that is the
+implicit "local" source, and it outranks every configured git/path source, so a
+drop-in there needs no `[[plugins.source]]` entry. Discovery is not activation:
+the plugin runs only once its id appears in `[plugins] enabled` in `config.toml`.
+
+`home/shells/noctalia/shell.nix` deploys `./plugins/*` there with
+`xdg.dataFile`. **New plugin files must be `git add`ed before rebuilding** —
+the flake only copies tracked files, and an untracked directory fails evaluation
+with `path '/nix/store/...-source/home/shells/noctalia/plugins/x' does not exist`.
+
+Widget scripts run against these globals:
+
+| | |
+|---|---|
+| `noctalia.setUpdateInterval(ms)` | poll cadence; drives repeated `update()` calls |
+| `noctalia.runAsync(argv, cb, timeoutMs)` | `cb` gets `{exitCode, stdout, stderr, timedOut, …}` |
+| `noctalia.json.decode(s)` | returns a table, or `nil, err` |
+| `barWidget.setText/setGlyph/setTooltip/setColor/setGlyphColor` | colors are palette role names (`primary`, `tertiary`, `error`, `on_surface`, …) |
+| `update()`, `onClick()`, `onRightClick()`, `onScroll()` | globals the host calls |
+
+Two things that cost time:
+
+1. **A configured gesture binding beats the script's own handler.** `Widget`
+   installs the `[widget.<name>.actions]` bindings on an outer input area and
+   strips those buttons from the plugin's inner area, so a `left = "exec …"`
+   entry means `onClick` never fires. Pick one.
+2. **Every paint must set every field.** A patch that omits `setColor` leaves the
+   previous value on screen, so an error state keeps the last good color.
+
+Check the work before rebuilding:
+
+```bash
+noctalia plugins lint home/shells/noctalia/plugins/ai-usage
+noctalia config validate <rendered config.toml>   # warns "unrecognized widget
+                                                  # type" until it is installed
+```
+
+### Other v5 notes
+
+- The bar is `[bar.main]` with `start`/`center`/`end` lists of widget names;
+  named `[widget.<name>]` entries add config. `sysmon` shows **one** stat per
+  instance, so v4's combined CPU/temp/RAM widget is three widgets.
+- v5 floats the bar by default: `margin_ends = 100` insets it 100px from each
+  end and `margin_edge` lifts it off the screen edge. `config.toml` zeroes both
+  for the v4 edge-to-edge bar. With `margin_ends = 0` the default
+  `concave_edge_corners` carves the two inner corners instead of rounding the
+  outer ones, so `radius` is left alone.
+- Running under systemd means the process has no logind session, so Noctalia logs
+  `failed to resolve logind session` and disables its own brightness control and
+  lock-on-suspend monitor. Neither matters here: brightness keys call
+  `brightnessctl` directly (`home/hyprland/bindings.nix`) and lock-before-sleep
+  comes from hypridle's `before_sleep_cmd`.
+- The first run opens a setup wizard which writes to the state file — on this
+  machine it set `theme.source = "wallpaper"`, overriding the repo's Kanagawa.
+  Fix with `noctalia msg color-scheme-set builtin Kanagawa`.
 
 ## 1Password SSH Agent
 
@@ -494,18 +568,22 @@ Credit: the approach is lifted from [`lumen-model-usage`](https://github.com/Dig
 
 ### Bar widget (Noctalia)
 
-A **CustomButton** in the bar's right group runs the script. Its `parseJson` mode
-reads `text`, `tooltip` and `textColor`/`iconColor` straight out of the script's
-`--bar` output, so the tooltip and the traffic-light coloring come for free:
+`home/shells/noctalia/plugins/ai-usage` is a local Noctalia plugin that polls
+`ai-usage --bar` every 60s and paints its `text`, `tooltip` and `textColor`
+straight onto a bar widget. `config.toml` wires it up as:
 
-| Field | Value |
-|-------|-------|
-| `icon` | `ai` |
-| `textCommand` | `~/.local/bin/ai-usage --bar` |
-| `parseJson` | `true` |
-| `textIntervalMs` | `60000` |
-| `leftClickExec` | `~/.local/bin/ai-usage --refresh` (click to force a re-read) |
-| `maxTextLength` | `16` |
+```toml
+[plugins]
+enabled = ["arnold/ai-usage"]
+
+[widget.ai-usage]
+type = "arnold/ai-usage:usage"
+```
+
+Left click re-runs the script with `--refresh`, bypassing the response cache.
+That is handled by the script's `onClick`, which is exactly why the widget
+declares **no** `[widget.ai-usage.actions]` — a configured binding would take the
+click first (see *Noctalia v5 → Local plugins*).
 
 `C` is Claude, `X` is Codex; the number is the highest used percentage across
 that provider's windows. `-` means not signed in / token expired, `?` means rate
@@ -516,10 +594,9 @@ Colors in JSON output must be one of Noctalia's palette roles —
 The tooltip is rendered as HTML, so runs of spaces collapse; the script drops its
 column padding in tooltip mode instead of trying to align with spaces.
 
-**Note:** the widget itself lives in `~/.config/noctalia/settings.json`, which is
-only synced to `home/shells/noctalia/settings.json` on request (see *Noctalia
-Settings (Hybrid Management)*). On a fresh machine, add the CustomButton above by
-hand or sync the settings first.
+This replaced the v4 **CustomButton** (`textCommand` + `parseJson` +
+`textIntervalMs`), which v5 has no equivalent for. The script's `--bar` output
+contract did not change across the move.
 
 ### Gotcha: `label` is reserved in jq
 
@@ -625,3 +702,57 @@ Profile archives contain session cookies, auth tokens, and potentially saved pas
 - Key is retrieved on-the-fly and never written to filesystem
 - LUKS disk encryption (enabled by default) provides additional protection
 - Decrypted archives are only created in temp directories and shredded after use
+
+## Hyprland 0.56+ Lua Config (why Hyprland comes from nixpkgs)
+
+**Problem:** After a flake update (August 2026), Hyprland booted into a stock
+desktop: no Noctalia bar, default wallpaper and theme, no keybinds, nothing from
+`autostart-noctalia.conf` running. Nothing crashed and nothing was logged as an
+error.
+
+**Root cause:** Hyprland replaced the hyprlang `hyprland.conf` format with a Lua
+config (`hyprland.lua`, `hl.*` API). Config discovery
+(`src/config/supplementary/jeremy/Jeremy.cpp`) prefers `hyprland.lua` and only
+falls back to `hyprland.conf`; **on git master the legacy parser was removed
+entirely** (`src/config/ConfigManager.cpp` always constructs
+`Lua::CConfigManager`). With no `hyprland.lua` present, Hyprland *generates a
+default one* and boots that — silently. The `hyprland` flake input tracked
+master, so `nix flake update` pulled this in.
+
+Tell them apart in `$XDG_RUNTIME_DIR/hypr/<sig>/hyprland.log`:
+
+```
+[cfg] Regular config at /home/arnold/.config/hypr/hyprland.lua   # BAD: Lua manager
+WARN ]: No config file found; attempting to generate.            # BAD: stock config
+[cfg] Lua config not found, using legacy config at .../hyprland.conf   # GOOD
+```
+
+Another tell: `hyprctl dispatch exec foo` fails with
+`attempt to call a nil value (global 'exec')` — the Lua manager is active.
+
+**Solution:** `modules/desktop-environments.nix` uses `pkgs.hyprland` (0.56.2 at
+the time of writing, which still parses `hyprland.conf`) instead of the
+`hyprwm/Hyprland` flake input, and that input was **removed from `flake.nix`** so
+it can't come back on the next update. nixpkgs is also cached, so no source build.
+
+**This is a deferral, not a fix.** When nixpkgs moves to a release without the
+legacy parser (0.57+), the same breakage returns. Migrating means rewriting
+`home/hyprland/*.nix` to emit `hyprland.lua`.
+
+The Noctalia side of that migration is already in place: v5 ships **both**
+`hyprland.conf` and `hyprland.lua` variants of its palette template, so
+`[theme.templates.user.hyprland]` in `home/shells/noctalia/config.toml` only
+needs to point at the `.lua` input and write a `.lua` output (see *Noctalia v5 →
+Theme templates*).
+
+**Verify before rebooting** (the running compositor is still the old one):
+
+```bash
+rm -f ~/.config/hypr/hyprland.lua   # a stray autogenerated one always wins
+nix build --impure --no-link --print-out-paths \
+  .#nixosConfigurations.G1a.config.programs.hyprland.package
+<store-path>/bin/Hyprland --verify-config   # must say "legacy config" + "config ok"
+```
+
+If it prints `Regular config at .../hyprland.lua` instead, the desktop will come
+up stock after reboot.

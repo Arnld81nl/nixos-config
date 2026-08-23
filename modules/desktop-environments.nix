@@ -1,5 +1,5 @@
 # Desktop environment configuration shared across machines
-{ config, pkgs, lib, username, hyprland, ... }:
+{ config, pkgs, lib, username, ... }:
 
 let
   # Get shell from config option (set by specialisations)
@@ -48,12 +48,18 @@ in
     wants = [ "home-manager-${username}.service" ];
   };
 
-  # Hyprland at system level (using git version for bug fixes)
+  # Hyprland at system level, from nixpkgs (NOT the git-master flake input).
+  #
+  # Hyprland master removed the legacy hyprlang `hyprland.conf` parser: it now
+  # only reads `hyprland.lua`, silently generates a default config when it finds
+  # none, and boots into a stock desktop (no bar, no keybinds, no autostart).
+  # nixpkgs currently ships 0.56.2, which still parses `hyprland.conf`.
+  # See CLAUDE.md "Hyprland 0.56+ Lua Config" before bumping this.
   programs.hyprland = {
     enable = true;
     xwayland.enable = true;
-    package = hyprland.packages.${pkgs.system}.hyprland;
-    portalPackage = hyprland.packages.${pkgs.system}.xdg-desktop-portal-hyprland;
+    package = pkgs.hyprland;
+    portalPackage = pkgs.xdg-desktop-portal-hyprland;
   };
 
   # XDG Portal for Hyprland (screen sharing, file dialogs, dark mode)

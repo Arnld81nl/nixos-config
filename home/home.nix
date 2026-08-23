@@ -1325,10 +1325,11 @@ in
     QT_QPA_PLATFORM = "wayland";
     SDL_VIDEODRIVER = "wayland";
     XDG_SESSION_TYPE = "wayland";
-  } // lib.optionalAttrs osConfig.services.fprintd.enable {
-    # Use clean PAM service for Noctalia lock screen (fingerprint hosts only)
-    NOCTALIA_PAM_CONFIG = "noctalia";
   };
+
+  # Noctalia v4 needed NOCTALIA_PAM_CONFIG to pick a custom PAM service. v5
+  # authenticates through the `login` service directly, so no env var is set;
+  # fingerprint unlock rides on /etc/pam.d/login.
 
   # === Battery notification service (laptops) ===
   # Sends desktop notifications at low battery levels and suspends at danger level

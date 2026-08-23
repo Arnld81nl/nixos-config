@@ -36,10 +36,14 @@ in
   nix.settings.substituters = [
     "https://cache.nixos.org"
     "https://digitalpals.cachix.org"
+    # Noctalia v5 is a C++/meson build; upstream publishes it here so rebuilds
+    # do not compile the shell from source.
+    "https://noctalia.cachix.org"
   ];
   nix.settings.trusted-public-keys = [
     "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
     "digitalpals.cachix.org-1:YWuWBw08EbEeTsIccpPfRTaqksfo4QtAVQaTRljYFm8="
+    "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4="
   ];
 
   # Allow users to use extra substituters (for cachix in user nix.conf)

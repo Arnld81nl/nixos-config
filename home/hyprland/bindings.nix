@@ -6,12 +6,12 @@ let
   # Shell-specific launcher command
   launcherCmd = if shell == "illogical"
     then "fuzzel"
-    else "noctalia-shell ipc call launcher toggle";
+    else "noctalia msg panel-toggle launcher";
 
   # Shell-specific lock command
   lockCmd = if shell == "illogical"
     then "hyprlock"
-    else "noctalia-shell ipc call lockScreen lock";
+    else "noctalia msg session lock";
 
   # Standard launcher bind for shells
   standardLauncherBind = ''

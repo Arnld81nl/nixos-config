@@ -1,0 +1,198 @@
+# Noctalia v5 declarative config.
+#
+# This is the *base* config, deployed read-only by Home Manager to
+# ~/.config/noctalia/config.toml. Changes made in the Settings GUI are written
+# by Noctalia to ~/.config/noctalia/settings.toml and layered on top, so GUI
+# tweaks survive rebuilds without the v4 hash/copy dance.
+#
+# Keep /home/USER as the literal placeholder: home/shells/noctalia/shell.nix
+# substitutes the real home directory at build time so the repo stays portable.
+#
+# Validate after editing:  noctalia config validate home/shells/noctalia/config.toml
+
+[shell]
+font_family            = "Adwaita Sans"
+settings_show_advanced = true
+
+[shell.animation]
+enabled = true
+speed   = 1.0
+
+[shell.panel]
+transparency_mode        = "soft"
+borders                  = false
+shadow                   = true
+launcher_placement       = "attached"
+clipboard_placement      = "attached"
+control_center_placement = "attached"
+wallpaper_placement      = "attached"
+session_placement        = "attached"
+
+# ── Theme ─────────────────────────────────────────────────────────────────────
+
+[theme]
+mode    = "dark"
+source  = "builtin"
+builtin = "Kanagawa"
+
+# Only the ghostty builtin template is enabled. It rewrites
+# ~/.config/ghostty/themes/noctalia, which home/ghostty.nix seeds as a writable
+# file and references with `theme = noctalia` — the same arrangement as v4. Its
+# apply hook is a no-op while that line is already present, so it never tries to
+# write the read-only Home Manager config.
+#
+# The gtk3/gtk4/qt templates are deliberately NOT enabled: they rewrite
+# ~/.config/gtk-3.0/gtk.css and ~/.config/gtk-4.0/gtk.css, which Home Manager
+# manages (home/shells/noctalia/theming.nix), and activation then fails on the
+# clobbered files.
+#
+# Note that a template left out here still gets its undo hook run at every
+# startup, so a disabled template whose undo touches a Home-Manager-owned file
+# logs a warning on each start.
+[theme.templates]
+enable_builtin_templates   = true
+builtin_ids                = ["ghostty"]
+enable_community_templates = false
+
+# Hyprland palette.
+#
+# Deliberately NOT the builtin `hyprland` template: that one runs an apply.sh
+# which probes the running compositor and, whenever it reads as Lua-config mode,
+# writes ~/.config/hypr/hyprland.lua. A stray hyprland.lua outranks
+# hyprland.conf and boots a stock desktop (see CLAUDE.md "Hyprland 0.56+ Lua
+# Config"). It would also try to append a source line to hyprland.conf, which is
+# a read-only Home Manager symlink.
+#
+# Rendering the same shipped template ourselves keeps the output path fixed and
+# the include declarative (home/hyprland/default.nix sources it).
+#
+# The output is deliberately NOT named noctalia.conf: the builtin template's
+# undo.sh runs on every startup while that template is disabled, and it deletes
+# ~/.config/hypr/noctalia.conf and strips any `source = ...noctalia.conf` line
+# from hyprland.conf — which would wipe the palette and fail against the
+# read-only Home Manager symlink.
+[theme.templates.user.hyprland]
+input_path  = "@NOCTALIA_TEMPLATES@/hyprland/hyprland.conf"
+output_path = "/home/USER/.config/hypr/noctalia-colors.conf"
+post_hook   = "hyprctl reload"
+
+# ── Wallpaper ─────────────────────────────────────────────────────────────────
+
+[wallpaper]
+enabled             = true
+fill_mode           = "crop"
+directory           = "/home/USER/Pictures/Wallpapers"
+transition          = ["fade", "wipe", "disc", "stripes", "honeycomb"]
+transition_duration = 1500
+
+[wallpaper.automation]
+enabled = false
+
+# ── Lock screen ───────────────────────────────────────────────────────────────
+
+[lockscreen]
+enabled        = true
+blur_intensity = 0.5
+tint_intensity = 0.3
+# Flipped to true by shell.nix on hosts with services.fprintd.enable.
+fingerprint    = false
+
+# Idle handling stays with hypridle (home/hyprland/hypridle.nix); leaving these
+# disabled avoids two daemons racing to lock the session.
+[idle.behavior.lock]
+enabled = false
+
+[idle.behavior.screen-off]
+enabled = false
+
+# ── System monitor ────────────────────────────────────────────────────────────
+
+[system.monitor]
+enabled = true
+
+# ── Bar ───────────────────────────────────────────────────────────────────────
+
+[bar.main]
+position      = "top"
+reserve_space = true
+
+# v5 defaults float the bar: margin_ends = 100 insets it 100px from each end and
+# margin_edge lifts it off the screen edge. Zeroing both restores the v4
+# edge-to-edge bar. With margin_ends = 0 the default concave_edge_corners carves
+# the two inner corners instead of rounding the outer ones, so `radius` stays
+# at its default.
+margin_ends   = 0
+margin_edge   = 0
+
+start  = ["launcher", "cpu", "cpu-temp", "ram", "clock"]
+center = ["workspaces"]
+end    = ["vpn2", "vpn1", "vpn3", "ai-usage", "caffeine", "notifications", "battery", "volume", "tray", "control-center"]
+
+[widget.clock]
+format         = "{:%H:%M %a, %b %d}"
+tooltip_format = "{:%A, %B %d, %Y}"
+
+# v4 packed CPU / temp / RAM into one SystemMonitor widget; v5 sysmon shows one
+# stat per instance, so the same readout is three widgets.
+[widget.cpu]
+type = "sysmon"
+stat = "cpu_usage"
+
+[widget.cpu-temp]
+type = "sysmon"
+stat = "cpu_temp"
+
+[widget.ram]
+type = "sysmon"
+stat = "ram_used"
+
+# ── Plugins ───────────────────────────────────────────────────────────────────
+#
+# Noctalia always scans ~/.local/share/noctalia/plugins, where
+# home/shells/noctalia/shell.nix deploys ./plugins/*. Discovery alone is not
+# enough: a plugin runs only once its id is listed here.
+[plugins]
+enabled = ["arnold/ai-usage"]
+
+# ── Custom buttons ────────────────────────────────────────────────────────────
+#
+# NOTE: v4's CustomButton could poll a command and render its stdout. v5's
+# custom_button has no text_command/parse_json equivalent, so the VPN buttons
+# are click-actions with no live status text; that still needs a plugin of its
+# own. ai-usage already has one — see [widget.ai-usage] below and CLAUDE.md
+# "Noctalia v5".
+
+[widget.vpn1]
+type    = "custom_button"
+glyph   = "shield"
+label   = "1"
+tooltip = "Toggle VPN 1"
+
+[widget.vpn1.actions]
+left = "exec bash /home/USER/.local/bin/vpn-1"
+
+[widget.vpn2]
+type    = "custom_button"
+glyph   = "shield"
+label   = "2"
+tooltip = "Toggle VPN 2"
+
+[widget.vpn2.actions]
+left = "exec bash /home/USER/.local/bin/vpn-2"
+
+[widget.vpn3]
+type    = "custom_button"
+glyph   = "shield"
+label   = "3"
+tooltip = "Toggle VPN 3"
+
+[widget.vpn3.actions]
+left = "exec bash /home/USER/.local/bin/vpn-3"
+
+# The one command-output widget that survived the v4 -> v5 move, as a plugin:
+# home/shells/noctalia/plugins/ai-usage polls `ai-usage --bar` and paints its
+# text, tooltip and threshold color. Left click there forces a re-read, so this
+# entry deliberately declares no [widget.ai-usage.actions] — a configured
+# gesture binding takes the click before the plugin's own onClick sees it.
+[widget.ai-usage]
+type = "arnold/ai-usage:usage"

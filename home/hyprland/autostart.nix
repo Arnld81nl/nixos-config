@@ -3,15 +3,17 @@
 { shell ? "noctalia", hasFprintd ? false }:
 
 let
-  # Extra env vars for fingerprint-capable hosts
-  pamServiceExport = if hasFprintd then " NOCTALIA_PAM_SERVICE" else "";
+  # Noctalia v5 authenticates through the `login` PAM service directly, so the
+  # NOCTALIA_PAM_SERVICE export that v4 needed is gone. Fingerprint unlock now
+  # depends on /etc/pam.d/login carrying fprintd (NixOS does this when
+  # services.fprintd.enable is set).
 
   # Shell-specific autostart commands
   illogicalAutostart = ''
     # Systemd integration - export environment for user services
     # Include HYPRLAND_INSTANCE_SIGNATURE so portal services can connect
-    exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE${pamServiceExport}
-    exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE${pamServiceExport}
+    exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE
+    exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE
     exec-once = dbus-update-activation-environment --all
 
     # Restart portal services to pick up new environment (fixes restart via greetd)
@@ -33,14 +35,10 @@ let
   '';
 
   noctaliaAutostart = ''
-${if hasFprintd then ''
-    # PAM service for Noctalia lock screen fingerprint auth
-    env = NOCTALIA_PAM_SERVICE,noctalia
-'' else ""}
     # Systemd integration - export environment for user services
     # Include HYPRLAND_INSTANCE_SIGNATURE so portal services can connect
-    exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE${pamServiceExport}
-    exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE${pamServiceExport}
+    exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE
+    exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE
 
     # Portal setup: start GTK portal first, then restart main portal
     exec-once = sleep 1 && systemctl --user restart xdg-desktop-portal-hyprland xdg-desktop-portal
@@ -48,11 +46,13 @@ ${if hasFprintd then ''
     # Polkit agent: badged supports fingerprint, hyprpolkitagent is password-only
     exec-once = ${if hasFprintd then "badged" else "systemctl --user start hyprpolkitagent"}
 
-    # Ensure Noctalia Hyprland colors file is writable (not a Home Manager symlink)
-    exec-once = bash -c 'f="$HOME/.config/hypr/noctalia/noctalia-colors.conf"; mkdir -p "$(dirname "$f")"; [ -L "$f" ] && rm -f "$f"; touch "$f"; chmod 0644 "$f"'
+    # Ensure the Noctalia palette file sourced by hyprland.conf exists and is a
+    # real file (not a Home Manager symlink) before the theme template writes it
+    exec-once = bash -c 'f="$HOME/.config/hypr/noctalia-colors.conf"; [ -L "$f" ] && rm -f "$f"; touch "$f"; chmod 0644 "$f"'
 
-    # Start desktop shell
-    exec-once = noctalia-shell
+    # Noctalia v5 is started by its own systemd user unit
+    # (programs.noctalia.systemd.enable in home/shells/noctalia/shell.nix),
+    # which is PartOf hyprland-session.target — no exec-once needed.
   '';
 
 in

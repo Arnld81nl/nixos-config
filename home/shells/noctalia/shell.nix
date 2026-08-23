@@ -1,134 +1,103 @@
-# Noctalia Desktop Shell configuration
+# Noctalia v5 Desktop Shell configuration
 #
-# Settings are managed with a hybrid approach:
-# - Configs are seeded from repo on first run
-# - GUI changes persist locally across rebuilds
-# - When repo configs are updated (hash changes), local files are overwritten
-# - To sync local changes back to repo, ask Claude to copy the files
+# v5 splits configuration in two:
+#   ~/.config/noctalia/config.toml           declarative base, deployed read-only here
+#   ~/.local/state/noctalia/settings.toml    runtime overrides written by the GUI
+#
+# Noctalia layers settings.toml on top of config.toml, so GUI changes survive
+# rebuilds on their own. That replaces v4's copy-and-hash deployment: there is no
+# .deployed-hash any more, and nothing in ~/.config/noctalia is overwritten.
+#
+# To promote a GUI change into the repo, copy the relevant keys from
+# ~/.local/state/noctalia/settings.toml into ./config.toml (keeping the
+# /home/USER placeholder). Note the state file wins over config.toml, so a key
+# set there keeps overriding the repo until it is removed from the state file.
 { config, pkgs, lib, inputs, hostname, username, osConfig ? null, ... }:
 
 let
-  # Noctalia package with QtWebSockets support (needed for Claw plugin)
   noctaliaPackage = inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
-  # Keep repo JSON public-safe by using /home/USER placeholders, then render
-  # the actual user home path at activation time.
+  # Keep the repo config public-safe by using a /home/USER placeholder, then
+  # render the real home path at build time.
   homePath = "/home/${username}";
-  homePathPlaceholders = [ "/home/USER" ];
-  renderedHomePaths = [ homePath ];
 
-  # Load base settings from JSON
-  baseSettings = builtins.fromJSON (
-    builtins.replaceStrings homePathPlaceholders renderedHomePaths
-      (builtins.readFile ./settings.json)
-  );
-  guiSettingsJson = pkgs.writeText "noctalia-gui-settings.json" (
-    builtins.replaceStrings homePathPlaceholders renderedHomePaths
-      (builtins.readFile ./gui-settings.json)
-  );
+  # @NOCTALIA_TEMPLATES@ resolves to the package's shipped theme templates, so the
+  # hyprland palette template is rendered from a pinned path rather than through
+  # the builtin template's compositor-probing apply.sh.
+  baseConfig = builtins.replaceStrings
+    [ "/home/USER" "@NOCTALIA_TEMPLATES@" ]
+    [ homePath "${noctaliaPackage}/share/noctalia/assets/templates" ]
+    (builtins.readFile ./config.toml);
 
-  # Filter out Battery widget for hosts without a battery (desktop PCs)
+  # Hosts without a battery should not carry the battery widget.
   hostsWithoutBattery = [ "kraken" ];
   hasBattery = !builtins.any (host: lib.hasPrefix host hostname) hostsWithoutBattery;
 
-  # Wire fingerprint auth into Noctalia's lock screen when fprintd is enabled.
+  withoutBattery = builtins.replaceStrings [ ''"battery", '' ] [ "" ] baseConfig;
+
+  # Wire fingerprint auth into the lock screen when fprintd is enabled.
+  # The PAM service itself is selected via NOCTALIA_PAM_SERVICE, exported from
+  # home/hyprland/autostart.nix.
   hasFingerprintAuth =
     if osConfig == null then false else osConfig.services.fprintd.enable or false;
 
-  # Generate host-specific settings
-  settings = baseSettings // {
-    general = baseSettings.general // {
-      autoStartAuth = hasFingerprintAuth;
-      allowPasswordWithFprintd = hasFingerprintAuth;
-    };
+  withFingerprint = text:
+    if hasFingerprintAuth
+    then builtins.replaceStrings [ "fingerprint    = false" ] [ "fingerprint    = true" ] text
+    else text;
 
-    bar = baseSettings.bar // {
-      widgets = baseSettings.bar.widgets // {
-        right = builtins.filter
-          (widget: hasBattery || widget.id != "Battery")
-          baseSettings.bar.widgets.right;
-      };
-    };
-  };
-
-  settingsJson = pkgs.writeText "noctalia-settings.json" (builtins.toJSON settings);
+  settingsToml = withFingerprint (if hasBattery then baseConfig else withoutBattery);
 in
 {
-  # Noctalia Desktop Shell
   # The module is loaded via conditional import in home/home.nix
-  programs.noctalia-shell = {
+  programs.noctalia = {
     enable = true;
+    package = noctaliaPackage;
 
-    # Add QtWebSockets support for Claw plugin
-    package = noctaliaPackage.overrideAttrs (old: {
-      buildInputs = (old.buildInputs or []) ++ [ pkgs.qt6.qtwebsockets ];
-    });
+    # v5 ships a user unit. It is PartOf hyprland-session.target and carries
+    # X-Restart-Triggers on the config, so the shell restarts itself on rebuild
+    # and on config changes — this is why home/shells/restart-on-change.nix no
+    # longer handles Noctalia.
+    systemd.enable = true;
 
-    # Disable automatic systemd service - we control startup via Hyprland autostart
-    systemd.enable = false;
+    settings = settingsToml;
   };
 
-  # Noctalia configuration files - hybrid approach
-  # Seeds from repo on first run, preserves local GUI changes,
-  # but overwrites when repo configs are updated (hash changes)
-  home.activation.noctaliaConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    NOCTALIA_DIR="$HOME/.config/noctalia"
-    HASH_FILE="$NOCTALIA_DIR/.deployed-hash"
+  # Local plugins. Noctalia scans this directory unconditionally (it is
+  # FileUtils::dataDir()/plugins, the implicit "local" source that outranks every
+  # configured git/path source), so nothing has to be declared as a
+  # [[plugins.source]] — but a plugin still only runs once its id appears in
+  # `[plugins] enabled` in config.toml.
+  #
+  # ai-usage restores the one v4 CustomButton that polled a command for its
+  # label; v5's custom_button cannot do that. See ./plugins/ai-usage.
+  xdg.dataFile."noctalia/plugins/ai-usage".source = ./plugins/ai-usage;
 
-    mkdir -p "$NOCTALIA_DIR"
+  # hyprland.conf sources ~/.config/hypr/noctalia-colors.conf for border colors. The
+  # theme template rewrites it whenever the palette changes, so it has to exist
+  # as a real writable file (Hyprland fails a `source =` on a missing file) and
+  # must not be a Home Manager symlink.
+  home.activation.noctaliaHyprColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    file="$HOME/.config/hypr/noctalia-colors.conf"
+    mkdir -p "$(dirname "$file")"
 
-    # Calculate hash of repo configs
-    REPO_HASH=$(cat ${settingsJson} ${guiSettingsJson} ${./colors.json} ${./plugins.json} | ${pkgs.coreutils}/bin/sha256sum | cut -d' ' -f1)
-
-    # Check if we should deploy (first run, hash removed, or repo updated)
-    SHOULD_DEPLOY=false
-    if [ ! -f "$NOCTALIA_DIR/settings.json" ]; then
-      SHOULD_DEPLOY=true
-    elif [ ! -f "$HASH_FILE" ]; then
-      SHOULD_DEPLOY=true
-      echo "Noctalia: Hash file missing, re-deploying configs..."
-    elif [ "$(cat "$HASH_FILE")" != "$REPO_HASH" ]; then
-      SHOULD_DEPLOY=true
-      echo "Noctalia: Repo configs updated, syncing..."
-    fi
-
-    if [ "$SHOULD_DEPLOY" = true ]; then
-      cp ${settingsJson} "$NOCTALIA_DIR/settings.json"
-      cp ${guiSettingsJson} "$NOCTALIA_DIR/gui-settings.json"
-      cp ${./colors.json} "$NOCTALIA_DIR/colors.json"
-      cp ${./plugins.json} "$NOCTALIA_DIR/plugins.json"
-      chmod 644 "$NOCTALIA_DIR"/*.json
-      echo "$REPO_HASH" > "$HASH_FILE"
-    fi
-  '';
-
-  # Ensure Noctalia's Hyprland colors file is writable (not a symlink)
-  # Noctalia generates this via template processing at runtime
-  home.activation.noctaliaHyprColorsWritable = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    dir="$HOME/.config/hypr/noctalia"
-    file="$dir/noctalia-colors.conf"
-    mkdir -p "$dir"
-
-    # If something (e.g. Home Manager) created a symlink here, replace it
     if [ -L "$file" ]; then
       rm -f "$file"
     fi
 
     touch "$file"
     chmod 0644 "$file"
-  '';
 
-  # Noctalia-specific packages
-  home.packages = with pkgs; [
-    quickshell  # For Noctalia IPC commands
-  ];
-
-  # Create symlink for Quickshell IPC config lookup
-  # This allows "qs -c noctalia-shell ipc ..." commands to find the running instance
-  home.activation.noctaliaQuickshellSymlink = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    QS_CONFIG_DIR="$HOME/.config/quickshell"
-    mkdir -p "$QS_CONFIG_DIR"
-    rm -f "$QS_CONFIG_DIR/noctalia-shell"
-    ln -s "${config.programs.noctalia-shell.package}/share/noctalia-shell" "$QS_CONFIG_DIR/noctalia-shell"
+    # Older Noctalia template runs could drop a hyprland.lua containing nothing
+    # but the Noctalia include. That file outranks hyprland.conf and boots a
+    # stock desktop, so clear it — but only when it is exactly that stub, never
+    # a real Lua config someone wrote on purpose.
+    lua="$HOME/.config/hypr/hyprland.lua"
+    if [ -f "$lua" ] && [ ! -L "$lua" ] \
+       && ! grep -qv -e '^$' -e '^-- For Noctalia Color templates$' \
+            -e '^require("noctalia").apply_theme()$' "$lua"; then
+      echo "Removing Noctalia-generated ~/.config/hypr/hyprland.lua (would shadow hyprland.conf)"
+      rm -f "$lua"
+    fi
   '';
 }

@@ -14,7 +14,7 @@ let
   # Shell-specific lock command
   lockCmd = if shell == "illogical"
     then "hyprlock"
-    else "pidof -q noctalia-shell && noctalia-shell ipc call lockScreen lock";
+    else "pidof -q noctalia && noctalia msg session lock";
 
   # DPMS listener (disabled on Intel — causes crashes on resume)
   dpmsListener = if isIntelHost then ''

@@ -122,13 +122,18 @@ let
     # Modular Hyprland configuration
     source = ~/.config/hypr/monitors.conf
     source = ~/.config/hypr/input.conf
-    source = ~/.config/hypr/bindings-${shell}.conf
+    # Named <shell>-bindings.conf, not bindings-<shell>.conf: Noctalia's builtin
+    # hyprland template undo hook strips any line matching
+    # `source = .*noctalia\.conf`, which the old name matched.
+    source = ~/.config/hypr/${shell}-bindings.conf
     source = ~/.config/hypr/looknfeel.conf
-    source = ~/.config/hypr/autostart-${shell}.conf
+    source = ~/.config/hypr/${shell}-autostart.conf
   '' + lib.optionalString isExternalDisplayLaptop ''
     source = ~/.config/hypr/external-monitor-toggle.conf
   '' + lib.optionalString (shell == "noctalia") ''
-    source = ~/.config/hypr/noctalia/noctalia-colors.conf
+    # Palette written by Noctalia v5's hyprland theme template
+    # (declared in home/shells/noctalia/config.toml).
+    source = ~/.config/hypr/noctalia-colors.conf
   '';
 
 in {
@@ -146,11 +151,11 @@ in {
   # Generate all shell-specific configs (each specialisation sources its own)
   xdg.configFile."hypr/monitors.conf".text = monitorsConfig;
   xdg.configFile."hypr/input.conf".text = inputConfig;
-  xdg.configFile."hypr/bindings-noctalia.conf".text = bindingsNoctalia;
-  xdg.configFile."hypr/bindings-illogical.conf".text = bindingsIllogical;
+  xdg.configFile."hypr/noctalia-bindings.conf".text = bindingsNoctalia;
+  xdg.configFile."hypr/illogical-bindings.conf".text = bindingsIllogical;
   xdg.configFile."hypr/looknfeel.conf".text = looknfeelConfig;
-  xdg.configFile."hypr/autostart-noctalia.conf".text = autostartNoctalia;
-  xdg.configFile."hypr/autostart-illogical.conf".text = autostartIllogical;
+  xdg.configFile."hypr/noctalia-autostart.conf".text = autostartNoctalia;
+  xdg.configFile."hypr/illogical-autostart.conf".text = autostartIllogical;
 
   # External-monitor toggle (only sourced when isExternalDisplayLaptop).
   # apply-once gets initial state right; toggle daemon handles hotplug.
