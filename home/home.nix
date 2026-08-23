@@ -488,18 +488,45 @@ in
         vpn4_connected=$(check_wireguard_vpn4)
 
         if [[ "''${1:-}" == "--bar" ]]; then
-          # Collapsed, the bar shows just "VPN"; once something is up it shows
-          # the connected names instead, so the pill answers "am I on the VPN?"
-          # without unfolding. The tooltip always lists all three.
+          N1='${secrets.vpn.vpn1.name or "VPN 1"}'
+          N2='${secrets.vpn.vpn2.name or "VPN 2"}'
+          N3='${secrets.vpn.vpn3.name or "VPN 3"}'
+
+          # text, glyph, tooltip, color
+          emit() {
+            printf '{"text": "%s", "glyph": "%s", "tooltip": "%s", "textColor": "%s"}\n' \
+              "$1" "$2" "$3" "$4"
+          }
+
+          # `--bar N` renders one VPN, for the three per-VPN bar buttons the
+          # accordion unfolds. The names live here rather than in the tracked
+          # config.toml because they identify tenants.
+          target="''${2:-}"
+          if [[ -n "$target" ]]; then
+            case "$target" in
+              1) state="$vpn1_connected"; name="$N1" ;;
+              2) state="$vpn2_connected"; name="$N2" ;;
+              3) state="$vpn3_connected"; name="$N3" ;;
+              *) emit "?" "shield-x" "unknown VPN \"$target\"" "error"; exit 1 ;;
+            esac
+
+            if [[ "$state" == "true" ]]; then
+              emit "$name" "shield-check" "$name — connected, click to disconnect" "primary"
+            else
+              emit "$name" "shield" "$name — off, click to connect" "on_surface"
+            fi
+            exit 0
+          fi
+
+          # No argument: the summary pill that is the accordion's collapsed
+          # face. It shows just "VPN" while nothing is up, and the connected
+          # names once something is, so it answers "am I on the VPN?" without
+          # unfolding. The tooltip always lists all three.
           text=""
           tooltip=""
           count=0
 
-          for pair in \
-            "$vpn1_connected:${secrets.vpn.vpn1.name or "VPN 1"}" \
-            "$vpn2_connected:${secrets.vpn.vpn2.name or "VPN 2"}" \
-            "$vpn3_connected:${secrets.vpn.vpn3.name or "VPN 3"}"
-          do
+          for pair in "$vpn1_connected:$N1" "$vpn2_connected:$N2" "$vpn3_connected:$N3"; do
             state="''${pair%%:*}"
             name="''${pair#*:}"
 
@@ -515,16 +542,10 @@ in
           tooltip="''${tooltip%\\n}"
 
           if (( count == 0 )); then
-            text="VPN"
-            glyph="shield"
-            color="on_surface"
+            emit "VPN" "shield" "$tooltip" "on_surface"
           else
-            glyph="shield-check"
-            color="primary"
+            emit "$text" "shield-check" "$tooltip" "primary"
           fi
-
-          printf '{"text": "%s", "glyph": "%s", "tooltip": "%s", "textColor": "%s"}\n' \
-            "$text" "$glyph" "$tooltip" "$color"
           exit 0
         fi
 

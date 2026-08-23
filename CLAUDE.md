@@ -489,17 +489,34 @@ That affected four widgets, and both are now local Luau plugins:
 
 - `ai-usage` → `home/shells/noctalia/plugins/ai-usage` (see *AI Subscription
   Usage → Bar widget*).
-- the three VPN buttons → `home/shells/noctalia/plugins/vpn`, one `vpn-status`
-  widget polling `vpn-status --bar` every 5s. The three `custom_button`s stayed,
-  but they no longer have to carry status: they are the hidden members of the
-  `vpn` accordion capsule (see *Bar capsule groups*), and the plugin pill in
-  front of them shows which VPNs are up.
+- all four VPN buttons → `home/shells/noctalia/plugins/vpn`, which has **two**
+  widget entries. `status` polls `vpn-status --bar` and is the collapsed face of
+  the `vpn` accordion capsule (see *Bar capsule groups*); `toggle` polls
+  `vpn-status --bar <N>` and renders one VPN, and there are three instances of
+  it inside the accordion.
 
-`vpn-status --bar` (in `home/home.nix`, next to the raw state map the script
-already emitted) is what supplies the names: they identify tenants, so they come
-from the gitignored `secrets.nix` and must not reach a tracked file. The same
-applies to the button labels — `config.toml` holds `@VPN1_NAME@` placeholders
-that `shell.nix` substitutes, exactly like `/home/USER`.
+`vpn-status --bar [N]` (in `home/home.nix`, next to the raw state map the script
+already emitted) supplies the names, which identify tenants and so come from the
+gitignored `secrets.nix`. Because the plugin fetches them at runtime, **nothing
+tenant-identifying is needed in `config.toml` at all** — there is no name
+placeholder and no substitution for it in `shell.nix`.
+
+Two things this plugin demonstrates that are worth reusing:
+
+1. **Per-instance settings.** A `[[widget.setting]]` block in `plugin.toml`
+   (`key`, `type`, `default`, and `label_key`/`description_key` — a literal
+   `label` is a lint *error*, and the key must exist in
+   `translations/en.json`) becomes a valid key in `[widget.<name>]`, read back
+   with `noctalia.getConfig("vpn")`. That is why three bar buttons need only one
+   entry file. It is also the reason a plugin widget rejects `capsule = true`:
+   a plugin widget accepts only the settings its manifest declares.
+2. **Click feedback.** `~/.local/bin/vpn-<N>` reports progress and errors on
+   stdout, which goes nowhere when the shell spawns it — a connection takes
+   10-30s, so a plain `exec` action looks like it did nothing, and a failure is
+   completely silent. `toggle.luau` runs it through `runAsync` instead and turns
+   the last non-empty output line into `noctalia.notify` / `notifyError`, while
+   painting a `shield-bolt` "working" state and pausing its own polling
+   (`busy`) so the 5s tick cannot repaint over it.
 
 ### Local plugins
 

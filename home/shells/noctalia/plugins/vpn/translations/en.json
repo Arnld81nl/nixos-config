@@ -1,0 +1,8 @@
+{
+  "settings": {
+    "vpn": {
+      "label": "VPN",
+      "description": "Which configured VPN this button toggles: 1, 2 or 3"
+    }
+  }
+}

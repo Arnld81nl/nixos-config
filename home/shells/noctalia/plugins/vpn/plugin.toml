@@ -25,3 +25,22 @@ description = "Connection state of the configured VPNs in the bar"
 [[widget]]
 id    = "status"
 entry = "widget.luau"
+
+# The three per-VPN toggles the accordion unfolds. One entry, three instances:
+# `vpn` is a per-widget setting (read with noctalia.getConfig), so config.toml
+# says `type = "arnold/vpn:toggle"` + `vpn = "1"|"2"|"3"` rather than needing an
+# entry file each.
+#
+# These replaced plain custom_buttons, which could show no state and gave no
+# feedback at all on click — the toggle scripts report progress on stdout, which
+# goes nowhere when the shell spawns them.
+[[widget]]
+id    = "toggle"
+entry = "toggle.luau"
+
+  [[widget.setting]]
+  key             = "vpn"
+  type            = "string"
+  label_key       = "settings.vpn.label"
+  description_key = "settings.vpn.description"
+  default         = "1"

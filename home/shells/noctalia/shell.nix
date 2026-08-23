@@ -21,29 +21,16 @@ let
   # render the real home path at build time.
   homePath = "/home/${username}";
 
-  # Same deal for the VPN button labels: the names identify the tenants, so they
-  # live only in the gitignored secrets.nix and are substituted in here. Loaded
-  # the same way home/home.nix does — by absolute path, because a gitignored file
-  # is not part of the flake source.
-  secretsPath = "/home/${username}/nixos-config/home/secrets.nix";
-  secrets =
-    if builtins.pathExists secretsPath
-    then import secretsPath
-    else { };
-  vpnName = key: fallback: secrets.vpn.${key}.name or fallback;
+  # No VPN-name substitution here any more: the bar buttons are plugin widgets
+  # that get the names at runtime from `vpn-status --bar`, which reads them from
+  # the gitignored secrets.nix. Nothing tenant-identifying reaches config.toml.
 
   # @NOCTALIA_TEMPLATES@ resolves to the package's shipped theme templates, so the
   # hyprland palette template is rendered from a pinned path rather than through
   # the builtin template's compositor-probing apply.sh.
   baseConfig = builtins.replaceStrings
-    [ "/home/USER" "@NOCTALIA_TEMPLATES@" "@VPN1_NAME@" "@VPN2_NAME@" "@VPN3_NAME@" ]
-    [
-      homePath
-      "${noctaliaPackage}/share/noctalia/assets/templates"
-      (vpnName "vpn1" "VPN 1")
-      (vpnName "vpn2" "VPN 2")
-      (vpnName "vpn3" "VPN 3")
-    ]
+    [ "/home/USER" "@NOCTALIA_TEMPLATES@" ]
+    [ homePath "${noctaliaPackage}/share/noctalia/assets/templates" ]
     (builtins.readFile ./config.toml);
 
   # Hosts without a battery should not carry the battery widget.

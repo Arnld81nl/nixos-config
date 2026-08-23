@@ -198,47 +198,33 @@ enabled = ["arnold/ai-usage", "arnold/vpn"]
 # The `vpn` capsule group above makes this an accordion: only vpn-status is drawn
 # until the capsule is hovered, and the three toggles slide out then.
 #
-# vpn-status is the visible half. v4's CustomButton could poll a command for its
-# label; v5's custom_button cannot, which is why the three shields used to show
-# no state at all. home/shells/noctalia/plugins/vpn polls `vpn-status --bar`
-# instead and paints the connected names, so the collapsed pill is both smaller
-# than the old three shields *and* says more than they did.
+# v4's CustomButton could poll a command for its label; v5's custom_button
+# cannot, which is why all four of these used to be dead shields with no state.
+# home/shells/noctalia/plugins/vpn polls `vpn-status --bar [N]` and paints it:
+# vpn-status renders the summary, and the three toggles render one VPN each.
 #
-# Left click there re-reads immediately, so — as with ai-usage — it deliberately
-# declares no [widget.vpn-status.actions]: a configured gesture binding takes the
-# click before the plugin's own onClick sees it.
+# The names come from the script (out of the gitignored secrets.nix), so nothing
+# tenant-identifying is needed in this file at all.
+#
+# None of the four declares a [widget.<name>.actions] block. Click is handled by
+# the plugin's own onClick — for vpn-status an immediate re-read, for a toggle
+# running ~/.local/bin/vpn-<N> and reporting the result as a notification. A
+# configured gesture binding would take the click before onClick ever sees it.
 [widget.vpn-status]
 type = "arnold/vpn:status"
 
-# @VPNn_NAME@ is substituted by shell.nix from the gitignored secrets.nix. The
-# names must not be committed, and "1" / "2" / "3" told you nothing about which
-# button was which once the accordion opened.
+# One entry, three instances: `vpn` is a per-widget plugin setting.
 [widget.vpn1]
-type    = "custom_button"
-glyph   = "shield"
-label   = "@VPN1_NAME@"
-tooltip = "Toggle @VPN1_NAME@"
-
-[widget.vpn1.actions]
-left = "exec bash /home/USER/.local/bin/vpn-1"
+type = "arnold/vpn:toggle"
+vpn  = "1"
 
 [widget.vpn2]
-type    = "custom_button"
-glyph   = "shield"
-label   = "@VPN2_NAME@"
-tooltip = "Toggle @VPN2_NAME@"
-
-[widget.vpn2.actions]
-left = "exec bash /home/USER/.local/bin/vpn-2"
+type = "arnold/vpn:toggle"
+vpn  = "2"
 
 [widget.vpn3]
-type    = "custom_button"
-glyph   = "shield"
-label   = "@VPN3_NAME@"
-tooltip = "Toggle @VPN3_NAME@"
-
-[widget.vpn3.actions]
-left = "exec bash /home/USER/.local/bin/vpn-3"
+type = "arnold/vpn:toggle"
+vpn  = "3"
 
 # ── Trims ─────────────────────────────────────────────────────────────────────
 #
