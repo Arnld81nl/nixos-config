@@ -655,6 +655,260 @@ in
       '';
     };
 
+    # AI subscription usage (Claude Code / Codex CLI) - terminal report and
+    # JSON for the Noctalia CustomButton on the bar. See CLAUDE.md.
+    ".local/bin/ai-usage" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        # ai-usage - show Claude Code / Codex CLI subscription usage.
+        #
+        # Reads (read-only) the OAuth tokens the CLIs already store on disk and queries
+        # the same internal endpoints their own /usage and /status screens use. Tokens
+        # are never refreshed here: refresh tokens rotate on use, so refreshing would
+        # invalidate the CLI's own session. An expired token is reported as such and
+        # recovers on its own the next time the CLI is run.
+        #
+        #   ai-usage            pretty report for the terminal
+        #   ai-usage --bar      one-line JSON {"text": ..., "icon": ...} for Noctalia
+        #   ai-usage --refresh  bypass the response cache
+        #
+        # Responses are cached for CACHE_TTL seconds so a bar widget polling every few
+        # seconds does not hammer the endpoints (Anthropic rate-limits this one hard).
+        set -uo pipefail
+
+        CACHE_DIR="''${XDG_RUNTIME_DIR:-/tmp}/ai-usage"
+        CACHE_TTL=120
+
+        # Set AI_USAGE_DEBUG=1 to see why a response failed to parse instead of just
+        # getting "unexpected response".
+        JQ_ERR=/dev/null
+        [[ -n "''${AI_USAGE_DEBUG:-}" ]] && JQ_ERR=/dev/stderr
+
+        MODE=report
+        COMPACT=0   # 1 = no column padding (bar tooltips are HTML, which eats spaces)
+        for arg in "$@"; do
+          case "$arg" in
+            --bar) MODE=bar ;;
+            --refresh) rm -f "$CACHE_DIR"/*.json 2>/dev/null ;;
+            -h|--help) sed -n '2,15p' "$0" | sed 's/^# \?//'; exit 0 ;;
+            *) echo "ai-usage: unknown option $arg" >&2; exit 2 ;;
+          esac
+        done
+
+        mkdir -p "$CACHE_DIR"
+
+        # cached <name> <fetch-fn> -> prints cached body, refreshing when stale
+        cached() {
+          local name="$1" fn="$2" now age
+          local file="$CACHE_DIR/$name.json"
+          now=$(date +%s)
+          if [[ -f "$file" ]]; then
+            age=$(( now - $(stat -c %Y "$file") ))
+            if (( age < CACHE_TTL )); then cat "$file"; return; fi
+          fi
+          "$fn" > "$file.tmp" && mv "$file.tmp" "$file" || rm -f "$file.tmp"
+          [[ -f "$file" ]] && cat "$file"
+        }
+
+        # Both fetchers emit {"status": "...", "data": {...}} so the renderers never
+        # have to care how the failure happened.
+        err() { jq -nc --arg s "$1" --arg m "''${2-}" '{status: $s, message: $m}'; }
+
+        fetch_claude() {
+          local creds="''${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
+          [[ -f "$creds" ]] || { err missing "not signed in"; return; }
+
+          local token expires now_ms
+          token=$(jq -r '.claudeAiOauth.accessToken // empty' "$creds")
+          expires=$(jq -r '.claudeAiOauth.expiresAt // empty' "$creds")
+          [[ -n "$token" ]] || { err missing "no OAuth token"; return; }
+          now_ms=$(( $(date +%s) * 1000 ))
+          if [[ -n "$expires" ]] && (( expires <= now_ms )); then
+            err expired "token expired - run claude"; return
+          fi
+
+          local body code
+          body=$(curl -sS -m 10 -w '\n%{http_code}' \
+            -H "Authorization: Bearer $token" \
+            -H "anthropic-beta: oauth-2025-04-20" \
+            -H "User-Agent: claude-code/2.1.0 (external, cli)" \
+            https://api.anthropic.com/api/oauth/usage 2>/dev/null)
+          code="''${body##*$'\n'}"
+          body="''${body%$'\n'*}"
+
+          case "$code" in
+            200) ;;
+            401|403) err expired "token expired - run claude"; return ;;
+            429) err ratelimited "rate limited"; return ;;
+            *) err error "HTTP ''${code:-none}"; return ;;
+          esac
+
+          local plan
+          plan=$(jq -r '.claudeAiOauth.subscriptionType // empty' "$creds")
+          jq -c --arg plan "$plan" '{
+            status: "ok",
+            plan: (if $plan == "" then null else ($plan[0:1] | ascii_upcase) + $plan[1:] end),
+            windows: [
+              {label: "5 hour limit", w: .five_hour},
+              {label: "Weekly limit", w: .seven_day},
+              {label: "Weekly (Opus)", w: .seven_day_opus},
+              {label: "Weekly (Sonnet)", w: .seven_day_sonnet}
+            ] | map(select(.w != null) | {label, used: .w.utilization, resets: .w.resets_at}),
+            credits: (if .extra_usage.is_enabled then {
+              used: (.extra_usage.used_credits / 100),
+              limit: (.extra_usage.monthly_limit / 100),
+              currency: .extra_usage.currency
+            } else null end)
+          }' <<<"$body" 2>"$JQ_ERR" || err error "unexpected response"
+        }
+
+        fetch_codex() {
+          local auth="''${CODEX_HOME:-$HOME/.codex}/auth.json"
+          [[ -f "$auth" ]] || { err missing "not signed in"; return; }
+
+          local token account
+          token=$(jq -r '.tokens.access_token // empty' "$auth")
+          account=$(jq -r '.tokens.account_id // empty' "$auth")
+          [[ -n "$token" ]] || { err missing "no ChatGPT token (API-key auth unsupported)"; return; }
+
+          local body code
+          body=$(curl -sS -m 10 -w '\n%{http_code}' \
+            -H "Authorization: Bearer $token" \
+            ''${account:+-H "ChatGPT-Account-Id: $account"} \
+            -H "User-Agent: codex-cli" \
+            https://chatgpt.com/backend-api/wham/usage 2>/dev/null)
+          code="''${body##*$'\n'}"
+          body="''${body%$'\n'*}"
+
+          case "$code" in
+            200) ;;
+            401|403) err expired "token expired - run codex"; return ;;
+            429) err ratelimited "rate limited"; return ;;
+            *) err error "HTTP ''${code:-none}"; return ;;
+          esac
+
+          # Window length decides the label: <=5h is the session window, 7d the weekly.
+          jq -c '
+            def win_label($secs): if $secs == null then "usage limit"
+              elif $secs <= 18000 then "5 hour limit"
+              elif $secs == 604800 then "Weekly limit"
+              else "\($secs / 3600 | floor) hour limit" end;
+            def windows($rl; $name):
+              [$rl.primary_window, $rl.secondary_window]
+              | map(select(. != null) | {
+                  label: (win_label(.limit_window_seconds) | if $name == null then . else "\($name) (\(.))" end),
+                  used: .used_percent,
+                  resets: .reset_at
+                });
+            {
+              status: "ok",
+              plan: (if .plan_type then "ChatGPT \(.plan_type)" else null end),
+              windows: (windows(.rate_limit; null)
+                        + ([.additional_rate_limits // [] | .[]
+                            | windows(.rate_limit; .limit_name)] | flatten)),
+              credits: (if (.credits.has_credits // false) and (.credits.unlimited // false | not)
+                        then {used: null, limit: null, balance: (.credits.balance | tostring)}
+                        else null end)
+            }' <<<"$body" 2>"$JQ_ERR" || err error "unexpected response"
+        }
+
+        # resets_at may be RFC3339 or epoch seconds; print a friendly "in 2h 51m".
+        human_reset() {
+          local value="$1" target now delta
+          [[ -n "$value" && "$value" != "null" ]] || { echo ""; return; }
+          if [[ "$value" =~ ^[0-9]+$ ]]; then target="$value"
+          else target=$(date -d "$value" +%s 2>/dev/null) || { echo ""; return; }
+          fi
+          now=$(date +%s)
+          delta=$(( target - now ))
+          (( delta <= 0 )) && { echo "resets now"; return; }
+          if (( delta < 86400 )); then
+            printf 'resets in %dh %dm' $(( delta / 3600 )) $(( delta % 3600 / 60 ))
+          else
+            printf 'resets %s' "$(date -d "@$target" '+%a %H:%M')"
+          fi
+        }
+
+        render_provider() {
+          local title="$1" json="$2" status
+          status=$(jq -r '.status' <<<"$json" 2>/dev/null || echo error)
+          if [[ "$status" != ok ]]; then
+            printf '%s - %s\n\n' "$title" "$(jq -r '.message // .status' <<<"$json")"
+            return
+          fi
+
+          local plan
+          plan=$(jq -r '.plan // empty' <<<"$json")
+          printf '%s%s\n' "$title" "''${plan:+ - $plan}"
+
+          local label used resets
+          while IFS=$'\t' read -r label used resets; do
+            if (( COMPACT )); then
+              printf '%s · %s%% used%s\n' "$label" "$used" "$(r=$(human_reset "$resets"); [[ -n $r ]] && echo " · $r")"
+            else
+              printf '  %-22s %3s%% used   %s\n' "$label" "$used" "$(human_reset "$resets")"
+            fi
+          done < <(jq -r '.windows[] | [.label, (.used | round), (.resets // "")] | @tsv' <<<"$json")
+
+          local credits
+          credits=$(jq -r '
+            if .credits == null then empty
+            elif .credits.limit then "  \("Extra usage" | .[0:22]) \(.credits.currency // "") \(.credits.used) / \(.credits.limit)"
+            else "  Extra usage            balance \(.credits.balance)" end' <<<"$json")
+          [[ -n "$credits" ]] && printf '%s\n' "$credits"
+          printf '\n'
+        }
+
+        # Worst (highest) used percentage across a provider's windows, for the bar.
+        peak() {
+          jq -r 'if .status == "ok" then ([.windows[].used] | max // 0 | floor | tostring) + "%"
+                 elif .status == "ratelimited" then "?"
+                 else "-" end' <<<"$1" 2>/dev/null || echo "-"
+        }
+
+        # Same thing as a bare number, -1 when the provider has no usable data.
+        peak_num() {
+          jq -r 'if .status == "ok" then ([.windows[].used] | max // 0 | floor) else -1 end' \
+            <<<"$1" 2>/dev/null || echo -1
+        }
+
+        claude=$(cached claude fetch_claude)
+        codex=$(cached codex fetch_codex)
+        [[ -n "$claude" ]] || claude=$(err error "fetch failed")
+        [[ -n "$codex" ]] || codex=$(err error "fetch failed")
+
+        report() {
+          render_provider "Claude Code" "$claude"
+          render_provider "Codex CLI" "$codex"
+        }
+
+        if [[ "$MODE" == bar ]]; then
+          # Noctalia's CustomButton parses this directly when parseJson is on: text and
+          # tooltip are shown as-is, the color keys must be one of Noctalia's palette
+          # roles (primary/secondary/tertiary/error/none).
+          worst=$(peak_num "$claude")
+          other=$(peak_num "$codex")
+          (( other > worst )) && worst=$other
+          color=""
+          (( worst >= 75 )) && color="tertiary"
+          (( worst >= 90 )) && color="error"
+
+          COMPACT=1
+          tooltip=$(report)
+          jq -nc \
+            --arg text "C $(peak "$claude")  X $(peak "$codex")" \
+            --arg tooltip "$tooltip" \
+            --arg color "$color" \
+            '{text: $text, icon: "", tooltip: $tooltip}
+             + (if $color == "" then {} else {textColor: $color, iconColor: $color} end)'
+        else
+          printf '\n'
+          report
+        fi
+      '';
+    };
+
     # VPN 4 - WireGuard config (from secrets)
     ".config/vpn/wg-vpn4.conf" = lib.mkIf (secrets.vpn.vpn4.wgConfig != "") {
       text = secrets.vpn.vpn4.wgConfig;

@@ -410,6 +410,86 @@ SSH keys are managed through 1Password's SSH agent (`home/1password-secrets.nix`
 
 SSH commands will automatically use keys from 1Password after a single unlock.
 
+## AI Subscription Usage (`ai-usage`)
+
+Shows how much of the Claude Code and Codex CLI subscription limits are used —
+the same numbers Claude Code's `/usage` and Codex's `/status` screens report.
+
+**Script:** `home/home.nix` → `.local/bin/ai-usage`
+
+```bash
+ai-usage                      # report for both providers in the terminal
+ai-usage --bar                # JSON for the Noctalia CustomButton
+ai-usage --refresh            # bypass the response cache
+AI_USAGE_DEBUG=1 ai-usage     # show why a response failed to parse
+```
+
+### How it works
+
+It reads (read-only) the OAuth tokens the CLIs already keep on disk and calls the
+endpoints those CLIs use themselves:
+
+| Provider | Credentials | Endpoint |
+|----------|-------------|----------|
+| Claude Code | `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR`) | `GET https://api.anthropic.com/api/oauth/usage` |
+| Codex CLI | `~/.codex/auth.json` (or `$CODEX_HOME`) | `GET https://chatgpt.com/backend-api/wham/usage` |
+
+Notes:
+- Tokens are **never refreshed** by the script. Refresh tokens rotate on use, so
+  refreshing here would invalidate the CLI's own session. An expired token is
+  reported as `token expired - run claude` / `run codex` and fixes itself the
+  next time that CLI is used.
+- The Anthropic request must send `User-Agent: claude-code/...` and
+  `anthropic-beta: oauth-2025-04-20`; other user agents land in a much more
+  aggressively rate-limited bucket.
+- Responses are cached in `$XDG_RUNTIME_DIR/ai-usage/` for 120s so the bar widget
+  polling every minute doesn't hammer the endpoints.
+- Which windows exist depends on the plan: Claude Max reports a 5-hour and a
+  weekly window (plus per-model ones when present), a ChatGPT Team plan only a
+  weekly one.
+- Both endpoints are internal and may change without notice.
+
+Credit: the approach is lifted from [`lumen-model-usage`](https://github.com/DigitalPals/Lumen)
+(the `model-usage` bar module in DigitalPals' Lumen shell).
+
+### Bar widget (Noctalia)
+
+A **CustomButton** in the bar's right group runs the script. Its `parseJson` mode
+reads `text`, `tooltip` and `textColor`/`iconColor` straight out of the script's
+`--bar` output, so the tooltip and the traffic-light coloring come for free:
+
+| Field | Value |
+|-------|-------|
+| `icon` | `ai` |
+| `textCommand` | `~/.local/bin/ai-usage --bar` |
+| `parseJson` | `true` |
+| `textIntervalMs` | `60000` |
+| `leftClickExec` | `~/.local/bin/ai-usage --refresh` (click to force a re-read) |
+| `maxTextLength` | `16` |
+
+`C` is Claude, `X` is Codex; the number is the highest used percentage across
+that provider's windows. `-` means not signed in / token expired, `?` means rate
+limited. The text turns `tertiary` at 75% used and `error` at 90%.
+
+Colors in JSON output must be one of Noctalia's palette roles —
+`primary`, `secondary`, `tertiary`, `error`, `none` — anything else is ignored.
+The tooltip is rendered as HTML, so runs of spaces collapse; the script drops its
+column padding in tooltip mode instead of trying to align with spaces.
+
+**Note:** the widget itself lives in `~/.config/noctalia/settings.json`, which is
+only synced to `home/shells/noctalia/settings.json` on request (see *Noctalia
+Settings (Hybrid Management)*). On a fresh machine, add the CustomButton above by
+hand or sync the settings first.
+
+### Gotcha: `label` is reserved in jq
+
+The Codex filter originally defined `def label($secs)`, which is a syntax error —
+`label` is a jq keyword (`label $out | ...`). The filter never compiled and every
+call fell through to `err error "unexpected response"`. It stayed invisible while
+the Codex token was expired (the request 401'd before reaching the parse) and only
+surfaced after signing in again. `AI_USAGE_DEBUG=1` exists to make that class of
+failure visible.
+
 ## App Profile Backup/Restore
 
 Encrypted app profile backup system using Age encryption and a private GitHub repository. Supports 1Password integration for automatic key retrieval across machines.
