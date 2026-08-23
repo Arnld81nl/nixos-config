@@ -1,0 +1,27 @@
+# Noctalia v5 bar widget for the VPN toggles.
+#
+# v5's custom_button cannot poll a command for its label (see CLAUDE.md
+# "Noctalia v5"), so the three shield buttons carried no status at all: you could
+# click to toggle but not see what was up. This renders that state from
+# `vpn-status --bar` (home/home.nix), which also supplies the names — they come
+# from the gitignored secrets.nix and must stay out of tracked files.
+#
+# Deployed by home/shells/noctalia/shell.nix to
+# ~/.local/share/noctalia/plugins/vpn, switched on by `[plugins] enabled` in
+# config.toml, and referenced from the bar as `type = "arnold/vpn:status"`.
+#
+# It is the first member of the `vpn` accordion capsule group: collapsed the bar
+# shows only this widget, and hovering the capsule unfolds the three toggles.
+
+id          = "arnold/vpn"
+name        = "VPN Status"
+version     = "1.0.0"
+# Same API level as arnold/ai-usage: 14 is the first that accepts
+# [[widget]].actions, well under the 28 this Noctalia build offers.
+plugin_api  = 14
+author      = "arnold"
+description = "Connection state of the configured VPNs in the bar"
+
+[[widget]]
+id    = "status"
+entry = "widget.luau"

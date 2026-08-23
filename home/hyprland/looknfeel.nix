@@ -85,6 +85,10 @@ ${masterConfig}
     force_default_wallpaper = 0
     disable_hyprland_logo = true
     focus_on_activate = false  # Prevent windows from stealing focus on activation
+
+    # NOTE: do NOT set misc:allow_session_lock_restore here. It reads like a
+    # crash-recovery option but is a lock-screen bypass — see CLAUDE.md
+    # "Rebuilding While the Screen Is Locked".
   }
 
   # XWayland scaling - let Hyprland handle scaling for X11 apps

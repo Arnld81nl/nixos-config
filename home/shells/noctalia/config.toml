@@ -124,27 +124,66 @@ reserve_space = true
 margin_ends   = 0
 margin_edge   = 0
 
-start  = ["launcher", "cpu", "cpu-temp", "ram", "clock"]
+start  = ["launcher", "group:sysmon", "clock"]
 center = ["workspaces"]
-end    = ["vpn2", "vpn1", "vpn3", "ai-usage", "caffeine", "notifications", "battery", "volume", "tray", "control-center"]
+end    = ["group:vpn", "group:ai", "group:tools", "control-center"]
+
+# Capsules do the decluttering. Fourteen widgets separated by identical gaps read
+# as one long run; four pills give the eye somewhere to break, without dropping
+# anything from the bar.
+#
+# A group is itself a lane item: the lane lists `group:<id>` where the group sits,
+# and its members are named here instead of in the lane. Listing the members in
+# the lane as well is what a bare `capsule_group` silently does nothing about —
+# they render, ungrouped, with no capsule and no accordion.
+#
+# Everything left out of a group (launcher, control-center) stays a bare button
+# on purpose — they are menus, not readouts.
+capsule_group = [
+  # Three sysmon widgets that used to float apart as one readout again.
+  { id = "sysmon", members = ["cpu", "cpu-temp", "ram"] },
+
+  # accordion = true draws only the first member — vpn-status, the plugin pill —
+  # and unfolds the three toggles when the capsule is hovered. accordion_direction
+  # is where they unfold relative to that first widget: "end" keeps them in
+  # 1-2-3 order to its right, growing the (right-aligned) end lane leftwards.
+  { id = "vpn", members = ["vpn-status", "vpn1", "vpn2", "vpn3"], accordion = true, accordion_direction = "end" },
+
+  # One member on purpose: ai-usage is the only text readout on this side and
+  # keeps its own pill. A plugin widget cannot take `capsule = true` directly.
+  { id = "ai", members = ["ai-usage"] },
+
+  { id = "tools", members = ["caffeine", "notifications", "battery", "volume", "tray"] },
+]
 
 [widget.clock]
 format         = "{:%H:%M %a, %b %d}"
 tooltip_format = "{:%A, %B %d, %Y}"
+# Own capsule: it sits next to the sysmon pill and reads as a stray label
+# otherwise. The date stays on the bar — it is information, not clutter.
+capsule        = true
 
 # v4 packed CPU / temp / RAM into one SystemMonitor widget; v5 sysmon shows one
-# stat per instance, so the same readout is three widgets.
+# stat per instance, so the same readout is three widgets — held together again
+# by the `sysmon` capsule group above.
+#
+# label_min_width reserves room for the widest value each stat reaches ("100%",
+# "-40°C", "12.3 GiB"). Without it the capsule resizes every second as the
+# numbers gain and lose a digit, and everything left of it twitches along.
 [widget.cpu]
-type = "sysmon"
-stat = "cpu_usage"
+type            = "sysmon"
+stat            = "cpu_usage"
+label_min_width = 34
 
 [widget.cpu-temp]
-type = "sysmon"
-stat = "cpu_temp"
+type            = "sysmon"
+stat            = "cpu_temp"
+label_min_width = 42
 
 [widget.ram]
-type = "sysmon"
-stat = "ram_used"
+type            = "sysmon"
+stat            = "ram_used"
+label_min_width = 54
 
 # ── Plugins ───────────────────────────────────────────────────────────────────
 #
@@ -152,21 +191,33 @@ stat = "ram_used"
 # home/shells/noctalia/shell.nix deploys ./plugins/*. Discovery alone is not
 # enough: a plugin runs only once its id is listed here.
 [plugins]
-enabled = ["arnold/ai-usage"]
+enabled = ["arnold/ai-usage", "arnold/vpn"]
 
-# ── Custom buttons ────────────────────────────────────────────────────────────
+# ── VPN ───────────────────────────────────────────────────────────────────────
 #
-# NOTE: v4's CustomButton could poll a command and render its stdout. v5's
-# custom_button has no text_command/parse_json equivalent, so the VPN buttons
-# are click-actions with no live status text; that still needs a plugin of its
-# own. ai-usage already has one — see [widget.ai-usage] below and CLAUDE.md
-# "Noctalia v5".
+# The `vpn` capsule group above makes this an accordion: only vpn-status is drawn
+# until the capsule is hovered, and the three toggles slide out then.
+#
+# vpn-status is the visible half. v4's CustomButton could poll a command for its
+# label; v5's custom_button cannot, which is why the three shields used to show
+# no state at all. home/shells/noctalia/plugins/vpn polls `vpn-status --bar`
+# instead and paints the connected names, so the collapsed pill is both smaller
+# than the old three shields *and* says more than they did.
+#
+# Left click there re-reads immediately, so — as with ai-usage — it deliberately
+# declares no [widget.vpn-status.actions]: a configured gesture binding takes the
+# click before the plugin's own onClick sees it.
+[widget.vpn-status]
+type = "arnold/vpn:status"
 
+# @VPNn_NAME@ is substituted by shell.nix from the gitignored secrets.nix. The
+# names must not be committed, and "1" / "2" / "3" told you nothing about which
+# button was which once the accordion opened.
 [widget.vpn1]
 type    = "custom_button"
 glyph   = "shield"
-label   = "1"
-tooltip = "Toggle VPN 1"
+label   = "@VPN1_NAME@"
+tooltip = "Toggle @VPN1_NAME@"
 
 [widget.vpn1.actions]
 left = "exec bash /home/USER/.local/bin/vpn-1"
@@ -174,8 +225,8 @@ left = "exec bash /home/USER/.local/bin/vpn-1"
 [widget.vpn2]
 type    = "custom_button"
 glyph   = "shield"
-label   = "2"
-tooltip = "Toggle VPN 2"
+label   = "@VPN2_NAME@"
+tooltip = "Toggle @VPN2_NAME@"
 
 [widget.vpn2.actions]
 left = "exec bash /home/USER/.local/bin/vpn-2"
@@ -183,16 +234,40 @@ left = "exec bash /home/USER/.local/bin/vpn-2"
 [widget.vpn3]
 type    = "custom_button"
 glyph   = "shield"
-label   = "3"
-tooltip = "Toggle VPN 3"
+label   = "@VPN3_NAME@"
+tooltip = "Toggle @VPN3_NAME@"
 
 [widget.vpn3.actions]
 left = "exec bash /home/USER/.local/bin/vpn-3"
+
+# ── Trims ─────────────────────────────────────────────────────────────────────
+#
+# Text that was on the bar without being read. Nothing is lost: the volume level
+# is still in the icon and the tooltip, and the bell comes back the moment
+# something is unread.
+[widget.volume]
+type       = "volume"
+show_label = false
+
+[widget.notifications]
+type                = "notifications"
+hide_when_no_unread = true
+
+# Only at 100% — hide_when_plugged would also blank it while charging, which is
+# exactly when the number is worth watching.
+[widget.battery]
+type           = "battery"
+hide_when_full = true
 
 # The one command-output widget that survived the v4 -> v5 move, as a plugin:
 # home/shells/noctalia/plugins/ai-usage polls `ai-usage --bar` and paints its
 # text, tooltip and threshold color. Left click there forces a re-read, so this
 # entry deliberately declares no [widget.ai-usage.actions] — a configured
 # gesture binding takes the click before the plugin's own onClick sees it.
+#
+# Its capsule comes from the one-member `ai` group above rather than from
+# `capsule = true` here: plugin widgets only accept the settings their plugin
+# declares, and `noctalia config validate` flags a per-widget capsule on one as
+# an unknown setting.
 [widget.ai-usage]
 type = "arnold/ai-usage:usage"

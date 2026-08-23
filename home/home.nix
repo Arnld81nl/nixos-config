@@ -426,17 +426,30 @@ in
       executable = true;
       text = ''
         #!/usr/bin/env bash
-        # Check status of all VPNs and output JSON for widgets
+        # Check status of all VPNs and output JSON for widgets.
+        #
+        # Default output is the raw state map other scripts consume:
+        #   {"vpn2": false, "vpn1": true, "vpn3": false, "vpn4": false}
+        #
+        # With --bar it emits the Noctalia bar-widget contract instead, the same
+        # {text, glyph, tooltip, textColor} shape ai-usage uses. That is what
+        # home/shells/noctalia/plugins/vpn paints, so the names live here (from
+        # the gitignored secrets.nix) and never reach the tracked config.
 
         CONFIG_FILE="$HOME/.config/vpn/config"
-        if [[ ! -f "$CONFIG_FILE" ]]; then
-          echo '{"vpn2": false, "vpn1": false, "vpn3": false}'
-          exit 0
+        # Not an early exit: --bar still has to render, and every check below
+        # reports "false" on its own when the config is missing.
+        if [[ -f "$CONFIG_FILE" ]]; then
+          source "$CONFIG_FILE"
         fi
-        source "$CONFIG_FILE"
 
         check_fortivpn() {
           local ip="$1"
+          # An unset VPN_1_HOST would make the grep below match every line.
+          if [[ -z "$ip" ]]; then
+            echo "false"
+            return
+          fi
           if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$ip"; then
             echo "true"
           else
@@ -473,6 +486,47 @@ in
         vpn2_connected=$(check_ipsec "vpn2")
         vpn3_connected=$(check_openvpn_vpn3)
         vpn4_connected=$(check_wireguard_vpn4)
+
+        if [[ "''${1:-}" == "--bar" ]]; then
+          # Collapsed, the bar shows just "VPN"; once something is up it shows
+          # the connected names instead, so the pill answers "am I on the VPN?"
+          # without unfolding. The tooltip always lists all three.
+          text=""
+          tooltip=""
+          count=0
+
+          for pair in \
+            "$vpn1_connected:${secrets.vpn.vpn1.name or "VPN 1"}" \
+            "$vpn2_connected:${secrets.vpn.vpn2.name or "VPN 2"}" \
+            "$vpn3_connected:${secrets.vpn.vpn3.name or "VPN 3"}"
+          do
+            state="''${pair%%:*}"
+            name="''${pair#*:}"
+
+            if [[ "$state" == "true" ]]; then
+              count=$((count + 1))
+              text="''${text:+$text }$name"
+              tooltip="''${tooltip}● $name — connected\n"
+            else
+              tooltip="''${tooltip}○ $name — off\n"
+            fi
+          done
+
+          tooltip="''${tooltip%\\n}"
+
+          if (( count == 0 )); then
+            text="VPN"
+            glyph="shield"
+            color="on_surface"
+          else
+            glyph="shield-check"
+            color="primary"
+          fi
+
+          printf '{"text": "%s", "glyph": "%s", "tooltip": "%s", "textColor": "%s"}\n' \
+            "$text" "$glyph" "$tooltip" "$color"
+          exit 0
+        fi
 
         echo "{\"vpn2\": $vpn2_connected, \"vpn1\": $vpn1_connected, \"vpn3\": $vpn3_connected, \"vpn4\": $vpn4_connected}"
       '';

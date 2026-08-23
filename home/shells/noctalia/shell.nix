@@ -21,12 +21,29 @@ let
   # render the real home path at build time.
   homePath = "/home/${username}";
 
+  # Same deal for the VPN button labels: the names identify the tenants, so they
+  # live only in the gitignored secrets.nix and are substituted in here. Loaded
+  # the same way home/home.nix does — by absolute path, because a gitignored file
+  # is not part of the flake source.
+  secretsPath = "/home/${username}/nixos-config/home/secrets.nix";
+  secrets =
+    if builtins.pathExists secretsPath
+    then import secretsPath
+    else { };
+  vpnName = key: fallback: secrets.vpn.${key}.name or fallback;
+
   # @NOCTALIA_TEMPLATES@ resolves to the package's shipped theme templates, so the
   # hyprland palette template is rendered from a pinned path rather than through
   # the builtin template's compositor-probing apply.sh.
   baseConfig = builtins.replaceStrings
-    [ "/home/USER" "@NOCTALIA_TEMPLATES@" ]
-    [ homePath "${noctaliaPackage}/share/noctalia/assets/templates" ]
+    [ "/home/USER" "@NOCTALIA_TEMPLATES@" "@VPN1_NAME@" "@VPN2_NAME@" "@VPN3_NAME@" ]
+    [
+      homePath
+      "${noctaliaPackage}/share/noctalia/assets/templates"
+      (vpnName "vpn1" "VPN 1")
+      (vpnName "vpn2" "VPN 2")
+      (vpnName "vpn3" "VPN 3")
+    ]
     (builtins.readFile ./config.toml);
 
   # Hosts without a battery should not carry the battery widget.
@@ -72,6 +89,10 @@ in
   # ai-usage restores the one v4 CustomButton that polled a command for its
   # label; v5's custom_button cannot do that. See ./plugins/ai-usage.
   xdg.dataFile."noctalia/plugins/ai-usage".source = ./plugins/ai-usage;
+
+  # vpn gives the three shield buttons the status text v5's custom_button cannot
+  # render, and is the collapsed face of the `vpn` accordion capsule group.
+  xdg.dataFile."noctalia/plugins/vpn".source = ./plugins/vpn;
 
   # hyprland.conf sources ~/.config/hypr/noctalia-colors.conf for border colors. The
   # theme template rewrites it whenever the palette changes, so it has to exist

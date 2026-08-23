@@ -449,10 +449,21 @@ v4's `CustomButton` could poll a command and render its stdout
 settings are `glyph`, `label`, `tooltip` and click/scroll actions only, and there
 is no builtin widget that renders command output (`text` is fixed text).
 
-That affected four widgets. `ai-usage` is fixed — it is now a local Luau plugin
-(`home/shells/noctalia/plugins/ai-usage`, see *AI Subscription Usage → Bar
-widget*). The three VPN buttons are still click-actions with no live text; they
-previously showed status via `vpn-status-1/2/3` and want the same treatment.
+That affected four widgets, and both are now local Luau plugins:
+
+- `ai-usage` → `home/shells/noctalia/plugins/ai-usage` (see *AI Subscription
+  Usage → Bar widget*).
+- the three VPN buttons → `home/shells/noctalia/plugins/vpn`, one `vpn-status`
+  widget polling `vpn-status --bar` every 5s. The three `custom_button`s stayed,
+  but they no longer have to carry status: they are the hidden members of the
+  `vpn` accordion capsule (see *Bar capsule groups*), and the plugin pill in
+  front of them shows which VPNs are up.
+
+`vpn-status --bar` (in `home/home.nix`, next to the raw state map the script
+already emitted) is what supplies the names: they identify tenants, so they come
+from the gitignored `secrets.nix` and must not reach a tracked file. The same
+applies to the button labels — `config.toml` holds `@VPN1_NAME@` placeholders
+that `shell.nix` substitutes, exactly like `/home/USER`.
 
 ### Local plugins
 
@@ -463,7 +474,8 @@ drop-in there needs no `[[plugins.source]]` entry. Discovery is not activation:
 the plugin runs only once its id appears in `[plugins] enabled` in `config.toml`.
 
 `home/shells/noctalia/shell.nix` deploys `./plugins/*` there with
-`xdg.dataFile`. **New plugin files must be `git add`ed before rebuilding** —
+`xdg.dataFile` (`ai-usage` and `vpn`). **New plugin files must be `git add`ed
+before rebuilding** —
 the flake only copies tracked files, and an untracked directory fails evaluation
 with `path '/nix/store/...-source/home/shells/noctalia/plugins/x' does not exist`.
 
@@ -494,6 +506,56 @@ noctalia config validate <rendered config.toml>   # warns "unrecognized widget
                                                   # type" until it is installed
 ```
 
+### Bar capsule groups
+
+`[bar.main] capsule_group` wraps several widgets in one shared pill, which is
+what keeps a long bar readable. **A group is itself a lane item**: the lane lists
+`group:<id>` where the group sits, and the members are named only in the group
+entry.
+
+```toml
+start = ["launcher", "group:sysmon", "clock"]
+end   = ["group:vpn", "group:ai", "group:tools", "control-center"]
+
+capsule_group = [
+  { id = "sysmon", members = ["cpu", "cpu-temp", "ram"] },
+  { id = "vpn", members = ["vpn-status", "vpn1", "vpn2", "vpn3"],
+    accordion = true, accordion_direction = "end" },
+]
+```
+
+Listing the members in the lane instead is the trap: it **validates clean and
+renders nothing** — the widgets appear ungrouped, with no capsule and no
+accordion, and nothing is logged. Putting the group id in a lane without the
+`group:` prefix is only slightly louder: `[shell] widget factory: unknown widget
+"vpn"`, and a name that happens to collide with a widget *type* (`sysmon`) even
+draws a stray default widget instead.
+
+Group keys: `id`, `members`, `enabled`, `accordion`, `accordion_direction`
+(`start`/`end` only), `fill`, `border`, `foreground`, `opacity`, `padding`,
+`radius`, `widget_spacing`. The GUI's drawer-mode options are not in the 5.0.0
+schema even though its translations mention them.
+
+`accordion = true` draws only the first member and unfolds the rest on hover —
+the cheapest way to keep a cluster of buttons off the bar without losing them.
+
+Single widgets take `capsule = true` directly, **but plugin widgets do not**: a
+plugin only accepts the settings its `plugin.toml` declares, so
+`noctalia config validate` flags `widget.ai-usage.capsule` as an unknown setting.
+Give a plugin widget a one-member `capsule_group` instead.
+
+Useful de-cluttering options on the builtin widgets, all verified against 5.0.0:
+`volume.show_label`, `notifications.hide_when_no_unread`,
+`battery.hide_when_full` / `hide_when_plugged` / `label_content`
+(`percent`/`time`/`rate`), `sysmon.label_min_width` (stops the capsule resizing
+as digits come and go) / `visualization` (`graph`/`gauge`/`none`) / `show_glyph`
+/ `show_value`, `tray.drawer` + `drawer_columns` + `drawer_item_size`.
+
+There is no reference doc for most of this; `noctalia config export full` prints
+every widget with its defaults, and `noctalia config validate` on a scratch file
+names unknown keys and rejects bad enum values, which is how the above was
+established.
+
 ### Other v5 notes
 
 - The bar is `[bar.main]` with `start`/`center`/`end` lists of widget names;
@@ -512,6 +574,57 @@ noctalia config validate <rendered config.toml>   # warns "unrecognized widget
 - The first run opens a setup wizard which writes to the state file — on this
   machine it set `theme.source = "wallpaper"`, overriding the repo's Kanagawa.
   Fix with `noctalia msg color-scheme-set builtin Kanagawa`.
+
+## Rebuilding While the Screen Is Locked
+
+**Problem:** `nixos-rebuild switch` restarts `noctalia.service`, and Noctalia v5
+owns the lock screen. If hypridle has locked the session (5 minutes idle,
+`home/hyprland/hypridle.nix`), the rebuild kills the lock surface and Hyprland
+falls into its "Oopsie daisy, it looks like you locked your screen but the
+lockscreen app died" screen.
+
+**Why that is a trap here:** the on-screen instructions say to run
+`hyprctl eval 'hl.clear_crashed_lockscreen()'`, and that fails with *"eval is
+only supported with the lua config manager"* — this config is deliberately on
+the legacy `hyprland.conf` parser (see *Hyprland 0.56+ Lua Config*). There is no
+dispatcher equivalent; `clear_crashed_lockscreen` exists only as a Lua binding.
+
+**Recovery** (from a TTY, over SSH, or from a shell in the stuck session):
+
+```bash
+hyprctl keyword misc:allow_session_lock_restore true   # runtime only, not persisted
+noctalia msg session lock                              # a fresh lock takes over
+```
+
+`hyprctl locked` reports the crashed state as `true`, and the lock surface is
+**not** a layer-shell layer, so `hyprctl layers` never lists it — that is not
+evidence the lock failed.
+
+**Do not put `misc:allow_session_lock_restore` in the config.** It reads like a
+crash-recovery option ("allow you to restart a lockscreen app in case it
+crashes") but the compositor never checks whether the existing lock is actually
+dead. In `src/managers/SessionLockManager.cpp` (0.56.2):
+
+```cpp
+if (PROTO::sessionLock->isLocked() && !*PALLOWRELOCK && ...) {
+    pLock->sendDenied();        // the only thing protecting a LIVE lock
+    return;
+}
+if (m_sessionLock && !clientDenied() && !clientLocked())
+    return;                     // only bails while the old lock is in limbo
+m_sessionLock = makeUnique<SSessionLock>();   // otherwise the new lock TAKES OVER
+```
+
+With the flag on, any client that can bind `ext_session_lock_manager_v1` on the
+Wayland socket can lock, wait for the `locked` event (sent unconditionally by a
+5s fallback timer), then `unlock_and_destroy` — which clears `m_locked` and
+refocuses the desktop with **no PAM authentication at all**. Combined with
+`security.sudo.wheelNeedsPassword = false` that is passwordless root from any
+sandboxed app in the session, so the flag stays a momentary, manual recovery
+step and never a persistent setting.
+
+The real fix is not to rebuild while locked; the exposure window is only as long
+as the session is left locked with a rebuild running.
 
 ## 1Password SSH Agent
 
