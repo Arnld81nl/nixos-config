@@ -340,12 +340,23 @@ in
         # Extract just IP for pgrep (HOST is ip:port, process shows "ip port")
         IP="''${HOST%%:*}"
 
+        # -x -a lists only processes with that exact NAME, together with their
+        # command line. Plain `pgrep -fa` / `pkill -f` match the full command
+        # line of EVERY process, so an unrelated shell or editor mentioning the
+        # host could be reported as the VPN — or killed by the disconnect.
+        vpn_pids() {
+          # An empty match string would make grep match every line, so every
+          # process of that name would look like this VPN — and get killed.
+          [[ -n "$2" ]] || return 0
+          pgrep -x -a "$1" 2>/dev/null | grep "$2" | awk '{print $1}'
+        }
+
         # Handle OpenVPN-based VPNs
         if [[ "$VPN_TYPE" == "openvpn" ]]; then
           # Check if this specific OpenVPN is connected
-          if pgrep -x openvpn > /dev/null 2>&1 && pgrep -fa openvpn | grep -q "$IP"; then
+          if [[ -n "$(vpn_pids openvpn "$IP")" ]]; then
             echo "Disconnecting $NAME VPN..."
-            sudo pkill -f "openvpn.*$IP"
+            vpn_pids openvpn "$IP" | xargs -r sudo kill
             sudo rm -f "/tmp/.vpn-creds-$NAME"
             echo "Disconnected."
             exit 0
@@ -377,7 +388,7 @@ in
 
           # Wait a moment and check if connected
           sleep 5
-          if pgrep -x openvpn > /dev/null 2>&1 && pgrep -fa openvpn | grep -q "$IP"; then
+          if [[ -n "$(vpn_pids openvpn "$IP")" ]]; then
             echo "Connected to $NAME VPN."
           else
             echo "Connection failed. Check /tmp/vpn-$NAME.log"
@@ -389,9 +400,9 @@ in
 
         # Handle Fortinet VPNs (default)
         # Check if this specific VPN is connected (by checking process)
-        if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn | grep -q "$IP"; then
+        if [[ -n "$(vpn_pids openfortivpn "$IP")" ]]; then
           echo "Disconnecting $NAME VPN..."
-          sudo pkill -f "openfortivpn.*$IP"
+          vpn_pids openfortivpn "$IP" | xargs -r sudo kill
           echo "Disconnected."
           exit 0
         fi
@@ -412,7 +423,7 @@ in
 
         # Wait a moment and check if connected
         sleep 3
-        if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn | grep -q "$IP"; then
+        if [[ -n "$(vpn_pids openfortivpn "$IP")" ]]; then
           echo "Connected to $NAME VPN."
         else
           echo "Connection failed. Check /tmp/vpn-$NAME.log"
@@ -450,7 +461,10 @@ in
             echo "false"
             return
           fi
-          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$ip"; then
+          # -x -a lists only processes actually NAMED openfortivpn, together with
+          # their command line. Plain `pgrep -fa` would also match any shell or
+          # editor whose command line happened to mention the host.
+          if pgrep -x -a openfortivpn 2>/dev/null | grep -q "$ip"; then
             echo "true"
           else
             echo "false"
@@ -467,7 +481,28 @@ in
         }
 
         check_openvpn_vpn3() {
-          if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+          # This used `pgrep -f "openvpn.*vpn3"`, which matches the full COMMAND
+          # LINE of every process — so any shell, editor or grep that merely
+          # mentioned those two words made the bar report the VPN as connected.
+          # Trivially reproducible: `pgrep -fa "openvpn.*vpn3"` matches the very
+          # shell you type it into.
+          #
+          # The tunnel actually carrying an address is the real test, and it also
+          # rejects an openvpn process that is running but has no working tunnel.
+          local subnet='${secrets.vpn.vpn3.subnet or ""}'
+
+          if [[ -n "$subnet" ]]; then
+            if ip -4 addr show 2>/dev/null | grep -q "inet $subnet"; then
+              echo "true"
+            else
+              echo "false"
+            fi
+            return
+          fi
+
+          # No subnet configured: fall back to a process check that is at least
+          # strict. -x matches the process NAME, which only openvpn itself has.
+          if pgrep -x -a openvpn 2>/dev/null | grep -q "vpn3"; then
             echo "true"
           else
             echo "false"
@@ -564,7 +599,8 @@ in
         if [[ -f "$CONFIG_FILE" ]]; then
           source "$CONFIG_FILE"
           IP="''${VPN_1_HOST%%:*}"
-          if pgrep -x openfortivpn > /dev/null 2>&1 && pgrep -fa openfortivpn 2>/dev/null | grep -q "$IP"; then
+          # -x -a: only processes actually NAMED openfortivpn (see vpn-status).
+          if [[ -n "$IP" ]] && pgrep -x -a openfortivpn 2>/dev/null | grep -q "$IP"; then
             echo '{"text": "${secrets.vpn.vpn1.name or "VPN 1"} ●", "icon": ""}'
             exit 0
           fi
@@ -638,11 +674,21 @@ in
         NAME="${secrets.vpn.vpn3.name or "VPN 3"}"
         OP_ITEM="${secrets.vpn.vpn3.opItem}"
         OP_ACCOUNT="${secrets.vpn.vpn3.opAccount}"
+        SUBNET='${secrets.vpn.vpn3.subnet or ""}'
+
+        # `pgrep -f "openvpn.*vpn3"` matches the full COMMAND LINE of every
+        # process, so it also matched this script's own shell — and the
+        # `pkill -f` that used the same pattern would then have killed whatever
+        # unrelated process matched. -x matches the process NAME, which nothing
+        # but openvpn itself has.
+        openvpn_vpn3_pids() {
+          pgrep -x -a openvpn 2>/dev/null | grep "vpn3" | awk '{print $1}'
+        }
 
         # Check if already connected
-        if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+        if [[ -n "$(openvpn_vpn3_pids)" ]]; then
           echo "Disconnecting $NAME VPN..."
-          sudo pkill -f "openvpn.*vpn3"
+          openvpn_vpn3_pids | xargs -r sudo kill
           sudo rm -f "/tmp/.vpn-creds-$NAME"
           echo "Disconnected."
           exit 0
@@ -674,15 +720,26 @@ in
         # Connect in background with credentials file
         sudo openvpn --config "$CONFIG" --auth-user-pass "$CREDS_FILE" --daemon --log /tmp/vpn-$NAME.log
 
-        # Check connection
-        sleep 3
-        if pgrep -fa "openvpn.*vpn3" > /dev/null 2>&1; then
+        # Wait for the tunnel to actually carry an address rather than just for
+        # the daemon to exist, so "Connected" in the notification means the same
+        # thing the bar widget shows.
+        for _ in $(seq 1 15); do
+          if [[ -n "$SUBNET" ]] && ip -4 addr show 2>/dev/null | grep -q "inet $SUBNET"; then
+            echo "Connected to $NAME VPN."
+            exit 0
+          fi
+          sleep 1
+        done
+
+        # No subnet configured to wait on: fall back to the daemon being alive.
+        if [[ -z "$SUBNET" && -n "$(openvpn_vpn3_pids)" ]]; then
           echo "Connected to $NAME VPN."
-        else
-          echo "Connection failed. Check /tmp/vpn-$NAME.log"
-          cat /tmp/vpn-$NAME.log
-          exit 1
+          exit 0
         fi
+
+        echo "Connection failed. Check /tmp/vpn-$NAME.log"
+        cat /tmp/vpn-$NAME.log
+        exit 1
       '';
     };
 

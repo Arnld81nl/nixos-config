@@ -518,6 +518,21 @@ Two things this plugin demonstrates that are worth reusing:
    painting a `shield-bolt` "working" state and pausing its own polling
    (`busy`) so the 5s tick cannot repaint over it.
 
+**Never detect a VPN with `pgrep -f`.** `-f` matches the full **command line**
+of every process, so `pgrep -f "openvpn.*vpn3"` matched any shell, editor or
+grep that merely mentioned those two words — including the very shell you type
+it into — and the bar then reported a VPN that was not up. The same pattern in
+`pkill -f` would have killed that unrelated process on "disconnect". This is the
+same trap as the `bin/quickshell` one under *Shell Restart on Store Path
+Change*.
+
+Use `pgrep -x -a <name>` instead: `-x` matches the process **name**, which
+nothing but the daemon itself has, and `-a` adds the command line to filter on.
+Better still for status, check what the tunnel is actually doing — `vpn-status`
+looks for a `tun` address in `secrets.vpn.vpn3.subnet`, which also rejects an
+openvpn process that is alive but has no working tunnel. `vpn-3` waits for that
+same address before reporting "Connected", so the notification and the bar agree.
+
 ### Local plugins
 
 A plugin is a directory holding `plugin.toml` plus its `.luau` entry files.
