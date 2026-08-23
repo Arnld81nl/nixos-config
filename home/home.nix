@@ -896,6 +896,7 @@ in
     wireguard-tools          # WireGuard VPN client
     libnotify
     spotify
+    telegram-desktop # Telegram messenger
     lazydocker
     btop
     gnome-calculator

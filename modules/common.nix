@@ -290,7 +290,23 @@ in
   programs.dconf.enable = true;
 
   # Programs and packages
-  services.printing.enable = true;
+  services.printing = {
+    enable = true;
+    drivers = [ pkgs.hplip ]; # HP printer/scanner drivers (Color LaserJet MFP M476dn)
+  };
+
+  # USB printer, recreated on every rebuild so it survives CUPS state resets.
+  hardware.printers = {
+    ensurePrinters = [
+      {
+        name = "HP_M476dn";
+        description = "HP Color LaserJet MFP M476dn";
+        deviceUri = "usb://HP/Color%20LaserJet%20MFP%20M476dn?serial=CNB8HD93VP&interface=1";
+        model = "HP/hp-color_laserjet_pro_mfp_m476-ps.ppd.gz";
+      }
+    ];
+    ensureDefaultPrinter = "HP_M476dn";
+  };
   programs.firefox = {
     enable = true;
     policies = {
