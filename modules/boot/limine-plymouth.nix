@@ -5,16 +5,8 @@
   # Use latest kernel for best hardware support
   boot.kernelPackages = pkgs.linuxPackages_latest;
 
-  # Backport: fix mt76/mt7925 (Wi-Fi 7) sta_poll_list corruption on roaming.
-  # On re-association mt76_sta_add re-inits wcid->poll_list while the wcid is
-  # still on sta_poll_list; the next mt76_wcid_add_poll() then list_add()s an
-  # already-linked node -> "list_add corruption" kernel BUG -> hard freeze.
-  # Not in v7.1; upstream torvalds/linux 20b126920a25 (merged 2026-06-09).
-  # Drop this once the fix lands in linuxPackages_latest.
-  boot.kernelPatches = [{
-    name = "mt76-wcid-publish-check";
-    patch = ../../patches/mt76-wcid-publish-check.patch;
-  }];
+  # The mt76/mt7925 sta_poll_list roaming corruption fix (upstream 20b126920a25)
+  # is part of kernel 7.2, so the local backport in patches/ is gone.
 
   # Limine bootloader configuration
   boot.loader.systemd-boot.enable = false;
